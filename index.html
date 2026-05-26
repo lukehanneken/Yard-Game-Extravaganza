@@ -38,12 +38,10 @@
 
   <script type="text/babel" data-presets="react">
     const { useState, useEffect, useCallback } = React;
-
     function waitForFirebase(cb) {
       if (window.__firebase) { cb(); return; }
       window.addEventListener("firebaseReady", cb, { once: true });
     }
-
 
 // ── Firebase Setup ────────────────────────────────────────────────────────────
 const firebaseConfig = {
@@ -434,10 +432,11 @@ function RegisterView({ teams, setTeams, tournamentSettings }) {
             </div>
           </div>
           <div>
-            <a href={`https://cash.app/%24${tournamentSettings.cashapp || "LucasHanneken"}`}
-              target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
-              <Btn color="#00C244" style={{ width: "100%" }}>💚 Pay via CashApp</Btn>
-            </a>
+            <Btn color="#00C244" style={{ width: "100%" }} onClick={() => {
+              const handle = tournamentSettings.cashapp || "LucasHanneken";
+              window.location.href = `cashapp://cash.app/$${handle}`;
+              setTimeout(() => { window.open(`https://cash.app/$${handle}`, "_blank"); }, 1000);
+            }}>💚 Pay via CashApp</Btn>
             <div style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: "#00C244", marginTop: 4 }}>
               ${tournamentSettings.cashapp || "LucasHanneken"}
             </div>
@@ -2031,7 +2030,6 @@ function App() {
     </>
   );
 }
-
 
     waitForFirebase(() => {
       const root = ReactDOM.createRoot(document.getElementById("root"));
