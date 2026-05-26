@@ -1946,17 +1946,7 @@ function App() {
   const demoMatchups = initMatchups();
   const demoScores = initScores(demoMatchups);
 
-  const SEVEN_TEAMS = [
-    { id: 2001, number: 1, name: "Team Alpha",   player1: "Player 1", player2: "Player 2", teamType: "male",   p1paid: true, p2paid: true, byeOk: false, byePref: "", registeredAt: "Demo" },
-    { id: 2002, number: 2, name: "Team Bravo",   player1: "Player 3", player2: "Player 4", teamType: "female", p1paid: true, p2paid: true, byeOk: false, byePref: "", registeredAt: "Demo" },
-    { id: 2003, number: 3, name: "Team Charlie", player1: "Player 5", player2: "Player 6", teamType: "coed",   p1paid: true, p2paid: true, byeOk: false, byePref: "", registeredAt: "Demo" },
-    { id: 2004, number: 4, name: "Team Delta",   player1: "Player 7", player2: "Player 8", teamType: "male",   p1paid: true, p2paid: true, byeOk: true,  byePref: "", registeredAt: "Demo" },
-    { id: 2005, number: 5, name: "Team Echo",    player1: "Player 9", player2: "Player 10", teamType: "coed",  p1paid: true, p2paid: true, byeOk: false, byePref: "", registeredAt: "Demo" },
-    { id: 2006, number: 6, name: "Team Foxtrot", player1: "Player 11", player2: "Player 12", teamType: "female", p1paid: true, p2paid: true, byeOk: true, byePref: "", registeredAt: "Demo" },
-    { id: 2007, number: 7, name: "Team Golf",    player1: "Player 13", player2: "Player 14", teamType: "male",   p1paid: true, p2paid: true, byeOk: true, byePref: "", registeredAt: "Demo" },
-  ];
-
-  const [teams, setTeams] = useState(SEVEN_TEAMS);
+  const [teams, setTeams] = useState([]);
   const [matchups, setMatchups] = useState({});
   const [scores, setScores] = useState({});
   const [bracket, setBracket] = useState({});
