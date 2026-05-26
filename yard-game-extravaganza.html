@@ -1,0 +1,2013 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Yard Game Extravaganza!</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏆</text></svg>" />
+</head>
+<body style="margin:0;padding:0;background:#FFF5DC;">
+
+  <div id="root"></div>
+
+  <!-- React -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Babel for JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Firebase -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAAFwluZddM-ncAoJX_fQ1UNXV_fYxU0Cg",
+      authDomain: "yard-game-extravaganza.firebaseapp.com",
+      projectId: "yard-game-extravaganza",
+      storageBucket: "yard-game-extravaganza.firebasestorage.app",
+      messagingSenderId: "140506841100",
+      appId: "1:140506841100:web:ea4b64878a47745475ee29",
+      databaseURL: "https://yard-game-extravaganza-default-rtdb.firebaseio.com",
+    };
+    const firebaseApp = initializeApp(firebaseConfig);
+    const db = getDatabase(firebaseApp);
+    window.__firebase = { db, ref, onValue, set };
+    window.dispatchEvent(new Event("firebaseReady"));
+  </script>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect, useCallback } = React;
+
+    // Wait for Firebase before rendering
+    function waitForFirebase(cb) {
+      if (window.__firebase) { cb(); return; }
+      window.addEventListener("firebaseReady", cb, { once: true });
+    }
+
+
+// ── Firebase Setup ────────────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyAAFwluZddM-ncAoJX_fQ1UNXV_fYxU0Cg",
+  authDomain: "yard-game-extravaganza.firebaseapp.com",
+  projectId: "yard-game-extravaganza",
+  storageBucket: "yard-game-extravaganza.firebasestorage.app",
+  messagingSenderId: "140506841100",
+  appId: "1:140506841100:web:ea4b64878a47745475ee29",
+  databaseURL: "https://yard-game-extravaganza-default-rtdb.firebaseio.com",
+};
+// Firebase loaded via CDN module above
+const { db, ref, onValue, set } = window.__firebase || {};
+
+// ── Google Fonts ──────────────────────────────────────────────────────────────
+const FontLink = () => (
+  <style>{`
+    @import url('https://fonts.googleapis.com/css2?family=Bangers&family=Nunito:wght@400;600;700;800;900&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Nunito', sans-serif; background: #FFF5DC; }
+    :root {
+      --cream: #FFF5DC;
+      --red: #C0392B;
+      --gold: #E8A020;
+      --teal: #2A8C9E;
+      --dark: #2C1A0E;
+      --green: #5B8A3C;
+    }
+  `}</style>
+);
+
+// ── Game Config ───────────────────────────────────────────────────────────────
+const GAMES = [
+  { id: "bags",     name: "Bags",               emoji: "🎯", maxPts: 21, note: null },
+  { id: "kanjam",   name: "Kan Jam",            emoji: "🥏", maxPts: 21, note: null },
+  { id: "beerpong", name: "Beer Pong",          emoji: "🏓", maxPts: 20, note: "Each cup = 2 pts" },
+  { id: "beersby",  name: "Beersby",            emoji: "🍺", maxPts: 21, note: null },
+  { id: "badminton",name: "Badminton",          emoji: "🏸", maxPts: 21, note: null },
+  { id: "flipcup",  name: "Flip Cup Tug of War",emoji: "💪", maxPts: 20, note: "Each round won = 5 pts" },
+];
+
+const ADMIN_PASSWORD = "legend92";
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Generate matchups across all games so no two teams face each other twice.
+// Uses a round-robin scheduling algorithm (circle method) then assigns rounds to games.
+function generateUniqueMatchups(paidTeams, games) {
+  const ids = paidTeams.map(t => t.id);
+  const n = ids.length;
+  const isOdd = n % 2 !== 0;
+
+  // Find teams willing to take a bye, preferring their stated game preference
+  const byeWilling = paidTeams.filter(t => t.byeOk);
+
+  // Build a full round-robin schedule using the circle method
+  // Each "round" is one set of simultaneous matches where every team plays once
+  const schedule = []; // array of rounds, each round = array of [a, b] pairs
+  let list = shuffle([...ids]);
+  if (isOdd) list.push("BYE"); // add dummy BYE team for odd count
+
+  const N = list.length; // always even now
+  const rounds = N - 1;
+
+  for (let r = 0; r < rounds; r++) {
+    const round = [];
+    for (let i = 0; i < N / 2; i++) {
+      const a = list[i];
+      const b = list[N - 1 - i];
+      if (a !== "BYE" && b !== "BYE") {
+        round.push([a, b]);
+      } else {
+        // whoever is paired with BYE gets a bye this round
+        const byeTeamId = a === "BYE" ? b : a;
+        round.push([byeTeamId, "BYE"]);
+      }
+    }
+    schedule.push(round);
+    // rotate: keep list[0] fixed, rotate the rest
+    const fixed = list[0];
+    const rotating = list.slice(1);
+    rotating.unshift(rotating.pop());
+    list = [fixed, ...rotating];
+  }
+
+  // We have `rounds` rounds available. We need to pick one round per game (6 games).
+  // If rounds >= games, just pick first N_games rounds.
+  // For each game, assign that round's pairings.
+  const newMatchups = {};
+  games.forEach((g, gi) => {
+    const round = schedule[gi % schedule.length];
+    const pairs = round.map(([a, b]) => {
+      if (b === "BYE") {
+        // Try to honor bye preference
+        return { a, b: null, bye: true };
+      }
+      return { a, b, bye: false };
+    });
+    newMatchups[g.id] = pairs;
+  });
+
+  return newMatchups;
+}
+
+function calcLeaderboard(teams, scores, matchups) {
+  return teams
+    .map((t) => {
+      let wins = 0, losses = 0, points = 0, byes = 0;
+      GAMES.forEach((g) => {
+        const myMatchup = matchups[g.id]?.find(
+          (m) => m.a === t.id || m.b === t.id
+        );
+        if (!myMatchup) return;
+        if (myMatchup.bye) { wins++; points += g.maxPts; byes++; return; }
+        const key = `${myMatchup.a}_${myMatchup.b}_${g.id}`;
+        const sc = scores[key];
+        if (!sc) return;
+        const myScore = myMatchup.a === t.id ? sc.aScore : sc.bScore;
+        const oppScore = myMatchup.a === t.id ? sc.bScore : sc.aScore;
+        points += myScore;
+        if (myScore > oppScore) { wins++; points += (myScore - oppScore); }
+        else losses++;
+      });
+      return { ...t, wins, losses, points, byes, played: wins + losses + byes };
+    })
+    .sort((a, b) => {
+      const aRatio = a.played ? a.wins / a.played : 0;
+      const bRatio = b.played ? b.wins / b.played : 0;
+      if (bRatio !== aRatio) return bRatio - aRatio;
+      return b.points - a.points;
+    });
+}
+
+// ── QR Code ──────────────────────────────────────────────────────────────────
+function QRCodeDisplay({ url }) {
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url || window.location.href)}&bgcolor=FFF5DC&color=2C1A0E`;
+  return (
+    <div style={{ textAlign: "center", padding: "16px" }}>
+      <img src={qrUrl} alt="QR Code" style={{ width: 180, height: 180, borderRadius: 12, border: "4px solid var(--gold)" }} />
+      <p style={{ marginTop: 8, fontSize: 12, color: "var(--dark)", opacity: 0.6 }}>Scan to register your team</p>
+    </div>
+  );
+}
+
+// ── Sunburst BG ───────────────────────────────────────────────────────────────
+function Sunburst() {
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 0, overflow: "hidden", pointerEvents: "none" }}>
+      <svg width="100%" height="100%" viewBox="0 0 800 800" preserveAspectRatio="xMidYMid slice">
+        {Array.from({ length: 16 }).map((_, i) => {
+          const angle = (i / 16) * 360;
+          const color = i % 2 === 0 ? "#C0392B" : "#E8A020";
+          return (
+            <polygon
+              key={i}
+              points="400,400 800,0 800,100"
+              fill={color}
+              opacity={0.18}
+              transform={`rotate(${angle}, 400, 400)`}
+            />
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+// ── Btn ───────────────────────────────────────────────────────────────────────
+function Btn({ children, onClick, color = "var(--red)", style = {}, disabled = false, small = false }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        background: disabled ? "#ccc" : color,
+        color: "#fff",
+        border: "none",
+        borderRadius: 8,
+        padding: small ? "10px 18px" : "14px 28px",
+        fontSize: small ? 14 : 17,
+        fontFamily: "'Nunito', sans-serif",
+        fontWeight: 800,
+        cursor: disabled ? "not-allowed" : "pointer",
+        letterSpacing: 0.5,
+        boxShadow: disabled ? "none" : "0 3px 0 rgba(0,0,0,0.25)",
+        transition: "transform 0.1s, box-shadow 0.1s",
+        ...style,
+      }}
+      onMouseDown={e => { if (!disabled) e.currentTarget.style.transform = "translateY(2px)"; }}
+      onMouseUp={e => { e.currentTarget.style.transform = ""; }}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ── Card ──────────────────────────────────────────────────────────────────────
+function Card({ children, style = {} }) {
+  return (
+    <div style={{
+      background: "rgba(255,245,220,0.95)",
+      borderRadius: 16,
+      padding: "20px 18px",
+      boxShadow: "0 4px 20px rgba(0,0,0,0.13)",
+      border: "2px solid rgba(232,160,32,0.3)",
+      marginBottom: 16,
+      ...style,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+// ── Input ─────────────────────────────────────────────────────────────────────
+function Input({ label, value, onChange, placeholder, type = "text" }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      {label && <label style={{ display: "block", fontWeight: 700, marginBottom: 5, color: "var(--dark)", fontSize: 13 }}>{label}</label>}
+      <input
+        type={type}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{
+          width: "100%", padding: "11px 14px", borderRadius: 8,
+          border: "2px solid var(--gold)", fontSize: 15,
+          fontFamily: "'Nunito', sans-serif", background: "#fff",
+          color: "var(--dark)", outline: "none",
+        }}
+      />
+    </div>
+  );
+}
+
+// ── Header ────────────────────────────────────────────────────────────────────
+function Header({ onNav, view, isAdmin }) {
+  return (
+    <div style={{
+      background: "var(--red)", padding: "14px 16px 10px",
+      position: "sticky", top: 0, zIndex: 100,
+      boxShadow: "0 3px 12px rgba(0,0,0,0.3)",
+    }}>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontFamily: "'Bangers', cursive", fontSize: 26, color: "var(--gold)", letterSpacing: 2, lineHeight: 1 }}>
+          🏆 YARD GAME EXTRAVAGANZA!
+        </div>
+      </div>
+      <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+        {[
+          { id: "home", label: "🏠 Home" },
+          { id: "register", label: "📝 Register" },
+          { id: "roundrobin", label: "📅 Schedule" },
+          { id: "rules", label: "📖 Rules" },
+          { id: "leaderboard", label: "📊 Leaderboard" },
+          { id: "bracket", label: "🏆 Playoff Bracket" },
+          { id: "admin", label: "⚙️ Admin" },
+          ...(isAdmin ? [{ id: "awards", label: "🏅 Awards" }] : []),
+        ].map(n => (
+          <button key={n.id} onClick={() => onNav(n.id)} style={{
+            background: view === n.id ? "var(--gold)" : "rgba(255,255,255,0.15)",
+            color: "#fff", border: "none", borderRadius: 8,
+            padding: "11px 15px", fontSize: 15, fontWeight: 800,
+            fontFamily: "'Nunito', sans-serif", cursor: "pointer",
+          }}>{n.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── HOME ──────────────────────────────────────────────────────────────────────
+function HomeView({ onNav, teams }) {
+  return (
+    <div style={{ padding: "20px 16px" }}>
+      <div style={{ textAlign: "center", marginBottom: 24 }}>
+        <div style={{ fontSize: 64 }}>🏆</div>
+        <h1 style={{ fontFamily: "'Bangers', cursive", fontSize: 38, color: "var(--red)", letterSpacing: 3, lineHeight: 1.1 }}>
+          YARD GAME<br />EXTRAVAGANZA!
+        </h1>
+
+      </div>
+
+
+
+      <Card>
+        <div style={{ fontFamily: "'Bangers', cursive", fontSize: 18, color: "var(--red)", marginBottom: 12, letterSpacing: 1 }}>📋 EVENT INFO</div>
+        <div style={{ fontSize: 15, color: "var(--dark)", lineHeight: 2, fontWeight: 700 }}>
+          <div>📍 2950 100th Ave, Zeeland, MI</div>
+          <div>📅 September 26, 2026</div>
+          <div>👥 Teams of 2</div>
+          <div>🍺 Booze provided</div>
+        </div>
+      </Card>
+
+      <div style={{ textAlign: "center", marginBottom: 16 }}>
+        <Btn onClick={() => onNav("register")} color="var(--green)" style={{ width: "100%" }}>
+          Register Your Team →
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+// ── REGISTER ──────────────────────────────────────────────────────────────────
+function RegisterView({ teams, setTeams, tournamentSettings }) {
+  const [p1, setP1] = useState("");
+  const [p2, setP2] = useState("");
+  const [teamName, setTeamName] = useState("");
+  const [byeOk, setByeOk] = useState(false);
+  const [byePref, setByePref] = useState("");
+  const [teamType, setTeamType] = useState("");
+  const [step, setStep] = useState("form"); // form | payment | done
+  const [pendingTeam, setPendingTeam] = useState(null);
+
+  const handleSubmit = () => {
+    if (!p1.trim() || !p2.trim()) return alert("Enter both player names.");
+    const name = teamName.trim() || `${p1.trim()} & ${p2.trim()}`;
+    if (!teamType) return alert("Please select your team type.");
+    const team = {
+      id: Date.now(),
+      number: teams.length + 1,
+      name,
+      player1: p1.trim(),
+      player2: p2.trim(),
+      byeOk,
+      byePref,
+      teamType,
+      paid: false,
+      registeredAt: new Date().toLocaleTimeString(),
+    };
+    setPendingTeam(team);
+    setStep("payment");
+  };
+
+  const handlePaid = () => {
+    setTeams(prev => [...prev, pendingTeam]);
+    setStep("done");
+  };
+
+  if (step === "done") return (
+    <div style={{ padding: "30px 16px", textAlign: "center" }}>
+      <div style={{ fontSize: 64 }}>🎉</div>
+      <h2 style={{ fontFamily: "'Bangers', cursive", fontSize: 32, color: "var(--green)", letterSpacing: 2 }}>
+        YOU'RE IN!
+      </h2>
+      <Card style={{ marginTop: 20, textAlign: "left" }}>
+        <div style={{ fontWeight: 800, fontSize: 15, color: "var(--red)", marginBottom: 6 }}>Team #{pendingTeam.number}</div>
+        <div style={{ fontWeight: 700 }}>{pendingTeam.name}</div>
+        <div style={{ fontSize: 13, opacity: 0.7, marginTop: 4 }}>{pendingTeam.player1} & {pendingTeam.player2}</div>
+        {pendingTeam.paid && <div style={{ color: "var(--green)", fontWeight: 800, marginTop: 8 }}>✅ Payment confirmed</div>}
+      </Card>
+      <Btn onClick={() => { setStep("form"); setP1(""); setP2(""); setTeamName(""); setByeOk(false); setByePref(""); }}
+        color="var(--teal)" style={{ marginTop: 8 }}>Register Another Team</Btn>
+    </div>
+  );
+
+  if (step === "payment") return (
+    <div style={{ padding: "20px 16px" }}>
+      <Card>
+        <div style={{ fontFamily: "'Bangers', cursive", fontSize: 22, color: "var(--red)", letterSpacing: 1, marginBottom: 8 }}>
+          💰 PAY REGISTRATION FEE
+        </div>
+        <div style={{ background: "var(--gold)", borderRadius: 8, padding: "10px 14px", marginBottom: 16, textAlign: "center" }}>
+          <span style={{ fontFamily: "'Bangers', cursive", fontSize: 28, color: "#fff", letterSpacing: 2 }}>$30.00</span>
+          <div style={{ color: "#fff", fontSize: 12, fontWeight: 700 }}>Team: {pendingTeam?.name}</div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+          <a href={`https://venmo.com/${tournamentSettings.venmo || "YardGameXtravaganza"}?txn=pay&amount=30&note=YGE+Team+${pendingTeam?.number}+${encodeURIComponent(pendingTeam?.name || "")}`}
+            target="_blank" rel="noopener noreferrer" style={{ flex: 1, textDecoration: "none" }}>
+            <Btn color="#3D95CE" style={{ width: "100%" }}>💙 Pay via Venmo</Btn>
+          </a>
+          <a href={`https://cash.app/$${tournamentSettings.cashapp || "YardGameXtravaganza"}`}
+            target="_blank" rel="noopener noreferrer" style={{ flex: 1, textDecoration: "none" }}>
+            <Btn color="#00C244" style={{ width: "100%" }}>💚 Pay via CashApp</Btn>
+          </a>
+        </div>
+
+        <p style={{ fontSize: 12, color: "var(--dark)", opacity: 0.6, textAlign: "center", marginBottom: 16 }}>
+          After paying, click below. An admin will confirm your payment.
+        </p>
+        <Btn onClick={handlePaid} color="var(--green)" style={{ width: "100%" }}>
+          ✅ I've Sent Payment — Complete Registration
+        </Btn>
+      </Card>
+    </div>
+  );
+
+  return (
+    <div style={{ padding: "20px 16px" }}>
+      {!tournamentSettings.registrationOpen ? (
+        <Card style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 40 }}>🔒</div>
+          <h3 style={{ fontFamily: "'Bangers', cursive", fontSize: 24, color: "var(--red)", marginTop: 8 }}>
+            Registration Closed
+          </h3>
+          <p style={{ fontSize: 13, opacity: 0.7, marginTop: 8 }}>Check back soon or contact the organizer.</p>
+        </Card>
+      ) : (
+        <Card>
+          <div style={{ fontFamily: "'Bangers', cursive", fontSize: 22, color: "var(--red)", letterSpacing: 1, marginBottom: 16 }}>
+            📝 REGISTER YOUR TEAM
+          </div>
+          <Input label="Player 1 Name *" value={p1} onChange={setP1} placeholder="First & Last name" />
+          <Input label="Player 2 Name *" value={p2} onChange={setP2} placeholder="First & Last name" />
+          <Input label="Team Name (optional)" value={teamName} onChange={setTeamName} placeholder={p1 && p2 ? `${p1} & ${p2}` : "Leave blank to auto-generate"} />
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontWeight: 700, marginBottom: 8, color: "var(--dark)", fontSize: 13 }}>Team Type *</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              {[
+                { value: "male", label: "♂️ All Male", color: "#3D95CE" },
+                { value: "female", label: "♀️ All Female", color: "#D63384" },
+                { value: "coed", label: "⚡ Coed", color: "var(--green)" },
+              ].map(opt => (
+                <button key={opt.value} type="button" onClick={() => setTeamType(opt.value)} style={{
+                  flex: 1, padding: "10px 4px", borderRadius: 8, border: `2px solid ${teamType === opt.value ? opt.color : "var(--gold)"}`,
+                  background: teamType === opt.value ? opt.color : "#fff",
+                  color: teamType === opt.value ? "#fff" : "var(--dark)",
+                  fontWeight: 800, fontSize: 12, fontFamily: "'Nunito', sans-serif",
+                  cursor: "pointer", transition: "all 0.15s",
+                }}>{opt.label}</button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ background: "rgba(232,160,32,0.1)", borderRadius: 8, padding: "12px 14px", marginBottom: 14, border: "2px solid var(--gold)" }}>
+            <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+              <input type="checkbox" checked={byeOk} onChange={e => setByeOk(e.target.checked)}
+                style={{ marginTop: 3, width: 16, height: 16, flexShrink: 0 }} />
+              <div>
+                <span style={{ fontWeight: 800, fontSize: 13, color: "var(--dark)" }}>I'm OK taking a bye round</span>
+                <p style={{ fontSize: 12, opacity: 0.7, marginTop: 2 }}>
+                  If there's an odd number of teams, we need some teams to sit out one game.
+                  You'll receive an auto-win + full points for that game.
+                </p>
+              </div>
+            </label>
+            {byeOk && (
+              <div style={{ marginTop: 10 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "var(--dark)", display: "block", marginBottom: 6 }}>
+                  Which game would you prefer to skip? (optional)
+                </label>
+                <select value={byePref} onChange={e => setByePref(e.target.value)}
+                  style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "2px solid var(--gold)", fontFamily: "'Nunito', sans-serif", fontSize: 13 }}>
+                  <option value="">No preference</option>
+                  {GAMES.map(g => <option key={g.id} value={g.id}>{g.emoji} {g.name}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+
+          <Btn onClick={handleSubmit} color="var(--red)" style={{ width: "100%" }}>
+            Continue to Payment →
+          </Btn>
+        </Card>
+      )}
+
+      {teams.length > 0 && (
+        <Card>
+          <div style={{ fontFamily: "'Bangers', cursive", fontSize: 18, color: "var(--teal)", letterSpacing: 1, marginBottom: 10 }}>
+            👥 REGISTERED TEAMS ({teams.length})
+          </div>
+          {teams.map(t => (
+            <div key={t.id} style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              padding: "8px 10px", borderRadius: 8, marginBottom: 6,
+              background: t.paid ? "rgba(91,138,60,0.1)" : "rgba(192,57,43,0.07)",
+              border: `2px solid ${t.paid ? "var(--green)" : "rgba(192,57,43,0.2)"}`,
+            }}>
+              <div>
+                <span style={{ fontWeight: 800, fontSize: 13 }}>#{t.number} {t.name}</span>
+                <div style={{ fontSize: 11, opacity: 0.6 }}>{t.player1} & {t.player2}</div>
+                {t.teamType && <div style={{ fontSize: 10, fontWeight: 800, color: t.teamType === "female" ? "#D63384" : t.teamType === "coed" ? "var(--green)" : "var(--teal)" }}>
+                  {t.teamType === "female" ? "♀️ All Female" : t.teamType === "coed" ? "⚡ Coed" : "♂️ All Male"}
+                </div>}
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 800, color: t.paid ? "var(--green)" : "var(--red)" }}>
+                {t.paid ? "✅ PAID" : "⏳ PENDING"}
+              </span>
+            </div>
+          ))}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ── ROUND ROBIN ───────────────────────────────────────────────────────────────
+function RoundRobinView({ teams, matchups, setMatchups, scores, setScores, currentTeamId, setCurrentTeamId, votes, setVotes, soupEntries }) {
+  const [selectedGame, setSelectedGame] = useState(null);
+  const [scoreEntry, setScoreEntry] = useState({ myScore: "", oppScore: "" });
+  const [teamSearch, setTeamSearch] = useState("");
+  const [showVoting, setShowVoting] = useState(false);
+
+  const paidTeams = teams.filter(t => t.paid);
+
+  const myTeam = paidTeams.find(t => t.id === currentTeamId);
+
+  const submitScore = (game, matchup) => {
+    const myS = parseInt(scoreEntry.myScore);
+    const oppS = parseInt(scoreEntry.oppScore);
+    if (isNaN(myS) || isNaN(oppS)) return alert("Enter valid scores.");
+    if (myS > game.maxPts || oppS > game.maxPts) return alert(`Max score is ${game.maxPts}.`);
+
+    const key = `${matchup.a}_${matchup.b}_${game.id}`;
+    const isA = matchup.a === currentTeamId;
+    const existing = scores[key];
+
+    // If opponent already submitted, check for mismatch (don't check if editing own entry)
+    const iAmSubmitter = existing?.submittedBy === currentTeamId;
+    if (existing && !existing.confirmed && !iAmSubmitter) {
+      const myReported  = isA ? myS : oppS;
+      const oppReported = isA ? oppS : myS;
+      const theirA = existing.aScore, theirB = existing.bScore;
+      if (myReported !== (isA ? theirA : theirB) || oppReported !== (isA ? theirB : theirA)) {
+        alert("⚠️ Score mismatch! Your numbers don't match what your opponent entered. Talk it out and re-enter.");
+        return;
+      }
+    }
+
+    const newScores = {
+      ...scores,
+      // Save as pending (confirmed: false). Opponent approving flips it to true.
+      [key]: { aScore: isA ? myS : oppS, bScore: isA ? oppS : myS, confirmed: false, submittedBy: currentTeamId },
+    };
+    setScores(newScores);
+    setScoreEntry({ myScore: "", oppScore: "" });
+    setSelectedGame(null);
+
+    // Check if this team has now submitted all their games → prompt voting
+    const allSubmitted = GAMES.every(g => {
+      const mu = matchups[g.id]?.find(m => m.a === currentTeamId || m.b === currentTeamId);
+      if (!mu) return true;
+      if (mu.bye) return true;
+      const k = `${mu.a}_${mu.b}_${g.id}`;
+      return !!newScores[k];
+    });
+    const alreadyVoted = !!votes[currentTeamId];
+    if (allSubmitted && !alreadyVoted) {
+      setShowVoting(true);
+    } else {
+      alert("✅ Score submitted!");
+    }
+  };
+
+  // Team selector
+  if (!currentTeamId) return (
+    <div style={{ padding: "20px 16px" }}>
+      <Card>
+        <div style={{ fontFamily: "'Bangers', cursive", fontSize: 22, color: "var(--red)", letterSpacing: 1, marginBottom: 12 }}>
+          🎮 SELECT YOUR TEAM
+        </div>
+        <Input label="Search your team" value={teamSearch} onChange={setTeamSearch} placeholder="Type player or team name..." />
+        {paidTeams.filter(t =>
+          t.name.toLowerCase().includes(teamSearch.toLowerCase()) ||
+          t.player1.toLowerCase().includes(teamSearch.toLowerCase()) ||
+          t.player2.toLowerCase().includes(teamSearch.toLowerCase())
+        ).map(t => (
+          <div key={t.id} onClick={() => setCurrentTeamId(t.id)} style={{
+            padding: "10px 14px", borderRadius: 8, marginBottom: 8, cursor: "pointer",
+            border: "2px solid var(--gold)", background: "var(--cream)",
+            fontWeight: 700, fontSize: 14,
+          }}>
+            <div>#{t.number} {t.name}</div>
+            <div style={{ fontSize: 12, opacity: 0.6 }}>{t.player1} & {t.player2}</div>
+          </div>
+        ))}
+        {paidTeams.length === 0 && <p style={{ opacity: 0.5, fontSize: 13 }}>No paid teams yet.</p>}
+      </Card>
+    </div>
+  );
+
+  if (Object.keys(matchups).length === 0) return (
+    <div style={{ padding: "20px 16px" }}>
+      <Card style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 48 }}>⏳</div>
+        <h3 style={{ fontFamily: "'Bangers', cursive", fontSize: 24, color: "var(--red)", marginTop: 8 }}>
+          Waiting for Admin to Start Round Robin
+        </h3>
+        <p style={{ fontSize: 13, opacity: 0.6, marginTop: 8 }}>The organizer will generate matchups once all teams are registered.</p>
+      </Card>
+      <Btn onClick={() => setCurrentTeamId(null)} color="var(--teal)" small style={{ marginTop: 8 }}>← Change Team</Btn>
+    </div>
+  );
+
+  return (
+    <div style={{ padding: "20px 16px" }}>
+      {showVoting && (
+        <VotingModal
+          currentTeamId={currentTeamId}
+          teams={teams}
+          soupEntries={soupEntries}
+          votes={votes}
+          setVotes={setVotes}
+          onClose={() => setShowVoting(false)}
+        />
+      )}
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div>
+          <div style={{ fontFamily: "'Bangers', cursive", fontSize: 20, color: "var(--red)", letterSpacing: 1 }}>
+            #{myTeam?.number} {myTeam?.name}
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.6 }}>{myTeam?.player1} & {myTeam?.player2}</div>
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {votes[currentTeamId] ? null : (
+            <Btn onClick={() => setShowVoting(true)} color="var(--gold)" small>🗳️ Vote</Btn>
+          )}
+          <Btn onClick={() => setCurrentTeamId(null)} color="var(--teal)" small>Switch Team</Btn>
+        </div>
+      </div>
+
+      {GAMES.map(game => {
+        const matchup = matchups[game.id]?.find(m => m.a === currentTeamId || m.b === currentTeamId);
+        if (!matchup) return null;
+        const key = `${matchup.a}_${matchup.b}_${game.id}`;
+        const score = scores[key];
+        const oppId = matchup.a === currentTeamId ? matchup.b : matchup.a;
+        const oppTeam = paidTeams.find(t => t.id === oppId);
+        const isActive = selectedGame === game.id || selectedGame === `dispute_${game.id}`;
+        const isDisputing = selectedGame === `dispute_${game.id}`;
+
+        return (
+          <Card key={game.id}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <div>
+                  <div style={{ fontFamily: "'Bangers', cursive", fontSize: 18, color: "var(--dark)", letterSpacing: 1 }}>
+                    {game.emoji} {game.name} <span style={{ fontSize: 13, color: "var(--gold)", fontWeight: 800 }}>· {game.maxPts} pts</span>
+                  </div>
+                  {game.note && <div style={{ fontSize: 11, color: "var(--teal)", fontWeight: 700, marginTop: 1 }}>ℹ️ {game.note}</div>}
+                </div>
+                {matchup.bye ? (
+                  <div style={{ color: "var(--green)", fontWeight: 800, fontSize: 13, marginTop: 4 }}>
+                    🎉 BYE — Auto Win! +{game.maxPts} pts
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 13, opacity: 0.7, marginTop: 4 }}>
+                    vs #{oppTeam?.number} {oppTeam?.name}
+                  </div>
+                )}
+              </div>
+              {(() => {
+                const isMyMatchup = matchup.a === currentTeamId || matchup.b === currentTeamId;
+                const isA = matchup.a === currentTeamId;
+                const myScore  = score ? (isA ? score.aScore : score.bScore) : null;
+                const oppScore = score ? (isA ? score.bScore : score.aScore) : null;
+                const iSubmitted = score?.submittedBy === currentTeamId;
+                const oppSubmitted = score && !score.confirmed && !iSubmitted;
+
+                if (score?.confirmed) return (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontFamily: "'Bangers', cursive", fontSize: 20, color: "var(--green)" }}>
+                        {myScore} - {oppScore}
+                      </div>
+                      <div style={{ fontSize: 10, color: "var(--green)", fontWeight: 800 }}>✅ CONFIRMED</div>
+                    </div>
+                    <Btn onClick={() => {
+                      setScoreEntry({ myScore: String(myScore), oppScore: String(oppScore) });
+                      setScores(prev => ({ ...prev, [`${matchup.a}_${matchup.b}_${game.id}`]: { ...prev[`${matchup.a}_${matchup.b}_${game.id}`], confirmed: false, submittedBy: currentTeamId } }));
+                      setSelectedGame(game.id);
+                    }} color="var(--teal)" small>
+                      ✏️ Edit Score
+                    </Btn>
+                  </div>
+                );
+
+                if (iSubmitted) return (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontFamily: "'Bangers', cursive", fontSize: 20, color: "var(--gold)" }}>
+                        {myScore} - {oppScore}
+                      </div>
+                      <div style={{ fontSize: 10, color: "var(--gold)", fontWeight: 800 }}>⏳ AWAITING APPROVAL</div>
+                    </div>
+                    <Btn onClick={() => {
+                      setScoreEntry({ myScore: String(myScore), oppScore: String(oppScore) });
+                      setSelectedGame(game.id);
+                    }} color="var(--teal)" small>
+                      ✏️ Edit Score
+                    </Btn>
+                  </div>
+                );
+
+                if (!matchup.bye && isMyMatchup) return (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                    {oppSubmitted && (
+                      <div style={{ textAlign: "center", fontFamily: "'Bangers', cursive", fontSize: 28, color: "var(--dark)", letterSpacing: 1 }}>
+                        {myScore} — {oppScore}
+                      </div>
+                    )}
+                    <Btn onClick={() => setSelectedGame(isActive ? null : game.id)} color="var(--teal)" small>
+                      {isActive ? "Cancel" : oppSubmitted ? "✅ Approve / Dispute Score" : "Enter Score"}
+                    </Btn>
+                  </div>
+                );
+
+                if (!isMyMatchup) return (
+                  <span style={{ fontSize: 11, color: "var(--dark)", opacity: 0.4, fontWeight: 700 }}>🔒</span>
+                );
+                return null;
+              })()}
+            </div>
+
+            {isActive && !matchup.bye && (() => {
+              const key = `${matchup.a}_${matchup.b}_${game.id}`;
+              const existing = scores[key];
+              const isA = matchup.a === currentTeamId;
+              const oppPending = existing && !existing.confirmed && existing.submittedBy !== currentTeamId;
+              const preMyScore  = existing ? (isA ? existing.aScore : existing.bScore) : null;
+              const preOppScore = existing ? (isA ? existing.bScore : existing.aScore) : null;
+
+              if (oppPending && !isDisputing) return (
+                <div style={{ marginTop: 14, paddingTop: 14, borderTop: "2px solid var(--gold)" }}>
+                  <div style={{ background: "rgba(232,160,32,0.12)", border: "2px solid var(--gold)", borderRadius: 10, padding: "12px 14px", marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "var(--dark)", marginBottom: 6 }}>
+                      Your opponent entered these scores:
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, textAlign: "center" }}>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.6, marginBottom: 2 }}>Your Score</div>
+                        <div style={{ fontFamily: "'Bangers', cursive", fontSize: 32, color: "var(--teal)" }}>{preMyScore}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.6, marginBottom: 2 }}>Their Score</div>
+                        <div style={{ fontFamily: "'Bangers', cursive", fontSize: 32, color: "var(--red)" }}>{preOppScore}</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{
+                    textAlign: "center", marginBottom: 12,
+                    fontFamily: "'Bangers', cursive", fontSize: 36,
+                    color: "var(--dark)", letterSpacing: 2,
+                  }}>
+                    {preMyScore} — {preOppScore}
+                  </div>
+                  <Btn onClick={() => {
+                    setScores(prev => ({ ...prev, [key]: { ...prev[key], confirmed: true } }));
+                    setSelectedGame(null);
+                  }} color="var(--green)" style={{ width: "100%", marginBottom: 8 }}>
+                    ✅ Approve Score
+                  </Btn>
+                  <Btn onClick={() => {
+                    setScoreEntry({ myScore: "", oppScore: "" });
+                    setSelectedGame(`dispute_${game.id}`);
+                  }} color="var(--red)" style={{ width: "100%" }} small>
+                    ❌ Dispute Score
+                  </Btn>
+                </div>
+              );
+
+              return (
+                <div style={{ marginTop: 14, paddingTop: 14, borderTop: "2px solid var(--gold)" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 4 }}>Your Score</label>
+                      <input type="number" value={scoreEntry.myScore}
+                        onChange={e => setScoreEntry(p => ({ ...p, myScore: e.target.value }))}
+                        min="0" max={game.maxPts} placeholder="0"
+                        style={{ width: "100%", padding: "10px", borderRadius: 8, border: "2px solid var(--gold)", fontSize: 18, fontWeight: 800, textAlign: "center", fontFamily: "'Nunito', sans-serif" }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 700, display: "block", marginBottom: 4 }}>Their Score</label>
+                      <input type="number" value={scoreEntry.oppScore}
+                        onChange={e => setScoreEntry(p => ({ ...p, oppScore: e.target.value }))}
+                        min="0" max={game.maxPts} placeholder="0"
+                        style={{ width: "100%", padding: "10px", borderRadius: 8, border: "2px solid var(--gold)", fontSize: 18, fontWeight: 800, textAlign: "center", fontFamily: "'Nunito', sans-serif" }}
+                      />
+                    </div>
+                  </div>
+                  <Btn onClick={() => submitScore(game, matchup)} color="var(--green)" style={{ width: "100%", marginTop: 10 }}>
+                    Submit Score ✓
+                  </Btn>
+                </div>
+              );
+            })()}
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+
+// ── RULES VIEW ────────────────────────────────────────────────────────────────
+const RULES_DATA = [
+  {
+    id: "kanjam", emoji: "🥏", name: "Kan Jam", maxPts: 21,
+    general: [
+      "One cup in hand at all times.",
+      "You throw, then your partner throws.",
+      "No lifts or grabbing the frisbee.",
+      "Auto rebuttal unless someone lands the frisbee in the Kan unassisted.",
+      "Only one partner can throw the rebuttal throw. You have one chance to slot or make points to tie.",
+    ],
+    scoring: [
+      { pts: "1 pt",  desc: "Partner deflects frisbee into the side of the Kan." },
+      { pts: "2 pts", desc: "You hit the Kan directly on your own." },
+      { pts: "3 pts", desc: "Partner deflects frisbee into the Kan top." },
+      { pts: "🏆 WIN", desc: "Frisbee enters the front slot or top of the Kan unassisted — instant game over, no rebuttal." },
+      { pts: "⚠️", desc: "Must land exactly on 21. Going over drops your score to 13." },
+    ],
+  },
+  {
+    id: "beersby", emoji: "🍺", name: "Beersby", maxPts: 21,
+    general: [
+      "You throw, then your opponent throws. Alternate with your partner.",
+      "Partners are on the same side.",
+      "Cup in one hand throughout the game.",
+      "Uncatchable throws are below the knees or require jumping — no points awarded.",
+      "You cannot interfere with the frisbee before it crosses the plane of the Beersby pole.",
+      "No rebuttals allowed.",
+    ],
+    scoring: [
+      { pts: "1 pt",  desc: "Frisbee hits the ground." },
+      { pts: "2 pts", desc: "Beer bottle hits the ground because you hit the pole." },
+      { pts: "3 pts", desc: "Beer bottle hits the ground because you hit the beer bottle." },
+      { pts: "2 pts + rethrow", desc: "Opponent interferes with frisbee before it crosses the pole." },
+      { pts: "⚠️", desc: "Max 4 pts per round. If a throw is below knee level and hits the pole, no points — even if bottle hits the ground." },
+      { pts: "🏆", desc: "Play to 21. You can go over 21 and still win." },
+    ],
+  },
+  {
+    id: "bags", emoji: "🎯", name: "Bags", maxPts: 21,
+    general: [
+      "You throw, then your opponent throws.",
+      "Must throw from behind the front edge of the boards.",
+      "If a bag touches the ground it is disqualified.",
+      "A bag on the edge of the board must stay on when the edge is lifted to count.",
+    ],
+    scoring: [
+      { pts: "1 pt",  desc: "Bag lands on the board." },
+      { pts: "3 pts", desc: "Bag goes in the hole." },
+      { pts: "Cancel", desc: "Scores cancel each other out each round." },
+      { pts: "⚠️", desc: "Must land exactly on 21. Going over drops your score to 13." },
+    ],
+  },
+  {
+    id: "beerpong", emoji: "🏓", name: "Beer Pong", maxPts: 20,
+    general: [
+      "2 reracks per game, plus a Gentleman's rerack when down to 2 cups if requested.",
+      "1 Island call per player — no island calls with 2 cups or less.",
+      "If a non-island cup is made on an island call, it does not count.",
+      "Elbow foul = rethrow.",
+      "Bouncing into a cup = 2 cups pulled. Defense can slap away any bounced shot before it lands.",
+      "Heating Up and Fire calls must be heard and recognized by the other team.",
+      "If each teammate makes a cup, they each get to shoot again.",
+      "If each teammate makes the same cup, 3 cups total are pulled and they shoot again.",
+      "Balls that roll back on the table can be shot again behind the back only.",
+      "Automatic rebuttal no matter what.",
+      "If a player makes their first rebuttal shot, they keep shooting until they miss — game over.",
+    ],
+    scoring: [
+      { pts: "2 pts", desc: "Each cup made is worth 2 points." },
+      { pts: "🏆", desc: "10 cups total = 20 points max." },
+    ],
+    glossary: [
+      { term: "Island", def: "Calling out loud that you're going to make a specific cup that is not touching any other cups." },
+      { term: "Heating Up", def: "Make 2 shots in a row — you must call 'Heating Up' to be able to call Fire on your next shot." },
+      { term: "Fire", def: "Make 3 shots in a row after calling Heating Up — call 'Fire!' and keep shooting until you miss." },
+    ],
+  },
+  {
+    id: "badminton", emoji: "🏸", name: "Badminton", maxPts: 21,
+    general: [
+      "Spin a racket to determine who serves first.",
+      "Underhand serves only, from behind the back boundary line.",
+      "If the birdie touches the court lines it is considered in.",
+      "One chance to get the serve over the net — no first/second serve like tennis.",
+      "Rackets cannot touch the net when attempting to hit the birdie.",
+    ],
+    scoring: [
+      { pts: "1 pt", desc: "Every rally results in a point — the side that wins the rally scores." },
+      { pts: "🏆 21", desc: "First to 21 wins." },
+    ],
+  },
+  {
+    id: "flipcup", emoji: "💪", name: "Flip Cup Tug of War", maxPts: 20,
+    general: [
+      "Both partners are on the same side.",
+      "A shot glass rests in the middle of the taped lines to start the game.",
+      "Everyone cheers and breaks to rapid flip cup.",
+      "Each teammate tries to flip their cup as many times as possible in a row — no stopping or resetting.",
+      "Each successful flip moves the shot glass one space toward the opponent's end.",
+      "Both teams do this simultaneously — the shot glass moves back and forth.",
+      "Do NOT jump spaces. One flip = one space only.",
+      "If discrepancies occur, pause the game to clear them up, then resume.",
+      "You cannot move the shot glass for your partner. If they flip their cup, they have to move the shot glass. You can never move it two spaces because you both flipped at the same time.",
+    ],
+    scoring: [
+      { pts: "5 pts", desc: "Awarded each time your team wins a round (gets the shot glass to the end)." },
+      { pts: "🏆 20", desc: "First team to win 4 rounds wins the game (4 × 5 = 20 pts max)." },
+    ],
+  },
+];
+
+function RulesView() {
+  const [open, setOpen] = useState(null);
+
+  return (
+    <div style={{ padding: "20px 16px" }}>
+      <div style={{ fontFamily: "'Bangers', cursive", fontSize: 28, color: "var(--red)", letterSpacing: 2, textAlign: "center", marginBottom: 20 }}>
+        📖 RULES & SCORING
+      </div>
+
+      {RULES_DATA.map(game => {
+        const isOpen = open === game.id;
+        return (
+          <div key={game.id} style={{ marginBottom: 12 }}>
+            {/* Accordion header */}
+            <div
+              onClick={() => setOpen(isOpen ? null : game.id)}
+              style={{
+                background: isOpen ? "var(--red)" : "rgba(255,245,220,0.97)",
+                border: `2px solid ${isOpen ? "var(--red)" : "var(--gold)"}`,
+                borderRadius: isOpen ? "12px 12px 0 0" : 12,
+                padding: "14px 16px",
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                cursor: "pointer",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+                transition: "all 0.2s",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 26 }}>{game.emoji}</span>
+                <div>
+                  <div style={{ fontFamily: "'Bangers', cursive", fontSize: 20, color: isOpen ? "var(--gold)" : "var(--dark)", letterSpacing: 1 }}>
+                    {game.name}
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: isOpen ? "rgba(255,255,255,0.7)" : "var(--teal)" }}>
+                    Play to {game.maxPts} pts
+                  </div>
+                </div>
+              </div>
+              <span style={{ fontSize: 20, color: isOpen ? "#fff" : "var(--gold)", fontWeight: 800 }}>
+                {isOpen ? "▲" : "▼"}
+              </span>
+            </div>
+
+            {/* Accordion body */}
+            {isOpen && (
+              <div style={{
+                background: "rgba(255,245,220,0.97)",
+                border: "2px solid var(--red)", borderTop: "none",
+                borderRadius: "0 0 12px 12px",
+                padding: "16px",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+              }}>
+                {/* General Rules */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontFamily: "'Bangers', cursive", fontSize: 15, color: "var(--teal)", letterSpacing: 1, marginBottom: 8 }}>
+                    📋 GENERAL RULES
+                  </div>
+                  {game.general.map((rule, i) => (
+                    <div key={i} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "flex-start" }}>
+                      <span style={{ color: "var(--gold)", fontWeight: 900, fontSize: 13, minWidth: 16, marginTop: 1 }}>{i + 1}.</span>
+                      <span style={{ fontSize: 13, color: "var(--dark)", lineHeight: 1.5, fontWeight: 600 }}>{rule}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Scoring */}
+                <div style={{ marginBottom: game.glossary ? 14 : 0 }}>
+                  <div style={{ fontFamily: "'Bangers', cursive", fontSize: 15, color: "var(--red)", letterSpacing: 1, marginBottom: 8 }}>
+                    🏆 SCORING
+                  </div>
+                  {game.scoring.map((s, i) => (
+                    <div key={i} style={{
+                      display: "flex", gap: 10, marginBottom: 6, alignItems: "flex-start",
+                      background: s.pts.includes("WIN") || s.pts.includes("🏆") ? "rgba(91,138,60,0.08)" : "transparent",
+                      borderRadius: 6, padding: s.pts.includes("🏆") ? "4px 6px" : "2px 0",
+                    }}>
+                      <span style={{
+                        fontFamily: "'Bangers', cursive", fontSize: 14,
+                        color: s.pts.includes("⚠️") ? "var(--red)" : s.pts.includes("🏆") || s.pts.includes("WIN") ? "var(--green)" : "var(--gold)",
+                        minWidth: 60, fontWeight: 800,
+                      }}>{s.pts}</span>
+                      <span style={{ fontSize: 13, color: "var(--dark)", lineHeight: 1.5, fontWeight: 600 }}>{s.desc}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Glossary (Beer Pong only) */}
+                {game.glossary && (
+                  <div>
+                    <div style={{ fontFamily: "'Bangers', cursive", fontSize: 15, color: "var(--gold)", letterSpacing: 1, marginBottom: 8 }}>
+                      📚 GLOSSARY
+                    </div>
+                    {game.glossary.map((g, i) => (
+                      <div key={i} style={{ marginBottom: 8, background: "rgba(232,160,32,0.08)", borderRadius: 8, padding: "8px 10px", border: "1px solid rgba(232,160,32,0.3)" }}>
+                        <div style={{ fontWeight: 900, fontSize: 13, color: "var(--dark)" }}>{g.term}</div>
+                        <div style={{ fontSize: 12, color: "var(--dark)", opacity: 0.75, marginTop: 2, lineHeight: 1.5 }}>{g.def}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── LEADERBOARD ───────────────────────────────────────────────────────────────
+function LeaderboardView({ teams, scores, matchups }) {
+  const paidTeams = teams.filter(t => t.paid);
+  const ranked = calcLeaderboard(paidTeams, scores, matchups);
+  const medals = ["🥇", "🥈", "🥉"];
+
+  return (
+    <div style={{ padding: "20px 16px" }}>
+      <div style={{ fontFamily: "'Bangers', cursive", fontSize: 28, color: "var(--red)", letterSpacing: 2, textAlign: "center", marginBottom: 20 }}>
+        📊 LEADERBOARD
+      </div>
+      {ranked.length === 0 && (
+        <Card style={{ textAlign: "center" }}>
+          <p style={{ opacity: 0.5 }}>No results yet. Games haven't started!</p>
+        </Card>
+      )}
+      {ranked.map((t, i) => (
+        <Card key={t.id} style={{ padding: "12px 14px", background: i === 0 ? "rgba(232,160,32,0.15)" : undefined }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ fontFamily: "'Bangers', cursive", fontSize: 28, minWidth: 36, textAlign: "center" }}>
+              {medals[i] || `#${i + 1}`}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 800, fontSize: 14 }}>#{t.number} {t.name}</div>
+              <div style={{ fontSize: 11, opacity: 0.6 }}>{t.player1} & {t.player2}</div>
+              <div style={{ display: "flex", gap: 12, marginTop: 4, fontSize: 12, fontWeight: 700 }}>
+                <span style={{ color: "var(--green)" }}>W: {t.wins}</span>
+                <span style={{ color: "var(--red)" }}>L: {t.losses}</span>
+                {t.byes > 0 && <span style={{ color: "var(--teal)" }}>BYE: {t.byes}</span>}
+                <span style={{ color: "var(--gold)" }}>PTS: {t.points}</span>
+              </div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontFamily: "'Bangers', cursive", fontSize: 22, color: "var(--teal)" }}>{t.points}</div>
+              <div style={{ fontSize: 10, opacity: 0.5 }}>points</div>
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+
+// ── VOTING MODAL ─────────────────────────────────────────────────────────────
+function VotingModal({ currentTeamId, teams, soupEntries, votes, setVotes, onClose }) {
+  const paidTeams = teams.filter(t => t.paid);
+  const myTeam = paidTeams.find(t => t.id === currentTeamId);
+  const players = [myTeam?.player1, myTeam?.player2].filter(Boolean);
+
+  // step = 0 (player 1 votes) or 1 (player 2 votes)
+  const [step, setStep] = useState(0);
+  const [p1Dressed, setP1Dressed] = useState("");
+  const [p1Soup, setP1Soup] = useState("");
+  const [p2Dressed, setP2Dressed] = useState("");
+  const [p2Soup, setP2Soup] = useState("");
+
+  const otherTeams = paidTeams.filter(t => t.id !== currentTeamId);
+
+  const dressed = step === 0 ? p1Dressed : p2Dressed;
+  const soup    = step === 0 ? p1Soup    : p2Soup;
+  const setDressed = step === 0 ? setP1Dressed : setP2Dressed;
+  const setSoup    = step === 0 ? setP1Soup    : setP2Soup;
+
+  const handleNext = () => {
+    if (!dressed) return alert("Please vote for Best Dressed.");
+    if (!soup)    return alert("Please vote for Best Soup.");
+    if (step === 0 && players.length > 1) {
+      setStep(1);
+      // scroll modal back to top
+      document.getElementById("voting-modal-inner")?.scrollTo(0, 0);
+    } else {
+      // Save both votes — each counted separately
+      setVotes(prev => ({
+        ...prev,
+        [`${currentTeamId}_p1`]: { dressed: p1Dressed, soup: p1Soup },
+        [`${currentTeamId}_p2`]: { dressed: step === 0 ? dressed : p2Dressed, soup: step === 0 ? soup : p2Soup },
+        [currentTeamId]: true, // mark team as having voted
+      }));
+      onClose();
+    }
+  };
+
+  const playerName = players[step] || `Player ${step + 1}`;
+  const progressPct = players.length > 1 ? (step / players.length) * 100 : 50;
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 200,
+      background: "rgba(44,26,14,0.75)", display: "flex",
+      alignItems: "center", justifyContent: "center", padding: 16,
+    }}>
+      <div id="voting-modal-inner" style={{
+        background: "var(--cream)", borderRadius: 16, padding: "22px 18px",
+        width: "100%", maxWidth: 420, maxHeight: "88vh", overflowY: "auto",
+        border: "3px solid var(--gold)", boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
+      }}>
+        {/* Header */}
+        <div style={{ textAlign: "center", marginBottom: 4 }}>
+          <div style={{ fontFamily: "'Bangers', cursive", fontSize: 24, color: "var(--red)", letterSpacing: 1 }}>
+            🏅 CAST YOUR VOTES!
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--teal)", marginTop: 4 }}>
+            {playerName}'s Vote
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        {players.length > 1 && (
+          <div style={{ margin: "10px 0 16px", background: "rgba(0,0,0,0.1)", borderRadius: 99, height: 6 }}>
+            <div style={{
+              height: 6, borderRadius: 99, background: "var(--gold)",
+              width: `${(step + 1) / players.length * 100}%`,
+              transition: "width 0.3s",
+            }} />
+          </div>
+        )}
+
+        <p style={{ fontSize: 12, opacity: 0.6, textAlign: "center", marginBottom: 18 }}>
+          Step {step + 1} of {players.length} — each teammate votes separately
+        </p>
+
+        {/* Best Dressed */}
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontFamily: "'Bangers', cursive", fontSize: 17, color: "var(--teal)", letterSpacing: 1, marginBottom: 8 }}>
+            👗 BEST DRESSED TEAM
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto" }}>
+            {otherTeams.map(t => (
+              <label key={t.id} style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "9px 12px", borderRadius: 8, cursor: "pointer",
+                background: dressed === t.id ? "rgba(42,140,158,0.15)" : "#fff",
+                border: `2px solid ${dressed === t.id ? "var(--teal)" : "var(--gold)"}`,
+                transition: "all 0.15s",
+              }}>
+                <input type="radio" name={`dressed_${step}`} value={t.id} checked={dressed === t.id}
+                  onChange={() => setDressed(t.id)} style={{ accentColor: "var(--teal)", width: 16, height: 16 }} />
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 13 }}>#{t.number} {t.name}</div>
+                  <div style={{ fontSize: 11, opacity: 0.6 }}>{t.player1} & {t.player2}</div>
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* Best Soup */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontFamily: "'Bangers', cursive", fontSize: 17, color: "var(--gold)", letterSpacing: 1, marginBottom: 8 }}>
+            🍲 BEST SOUP
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+            {soupEntries.map(s => (
+              <label key={s.id} style={{
+                display: "flex", alignItems: "center", justifyContent: "center",
+                padding: "10px 6px", borderRadius: 8, cursor: "pointer", textAlign: "center",
+                background: soup === s.number ? "rgba(232,160,32,0.2)" : "#fff",
+                border: `2px solid ${soup === s.number ? "var(--gold)" : "rgba(232,160,32,0.4)"}`,
+                transition: "all 0.15s",
+              }}>
+                <input type="radio" name={`soup_${step}`} value={s.number} checked={soup === s.number}
+                  onChange={() => setSoup(s.number)} style={{ display: "none" }} />
+                <div>
+                  <div style={{ fontFamily: "'Bangers', cursive", fontSize: 20, color: soup === s.number ? "var(--gold)" : "var(--dark)" }}>
+                    {s.number}
+                  </div>
+                  <div style={{ fontSize: 10, fontWeight: 700, opacity: 0.7 }}>{s.name}</div>
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <Btn onClick={handleNext} color="var(--green)" style={{ width: "100%", marginBottom: 10 }}>
+          {step === 0 && players.length > 1 ? `Next → ${players[1]}'s Vote` : "✅ Submit All Votes"}
+        </Btn>
+        <Btn onClick={onClose} color="var(--teal)" style={{ width: "100%" }} small>
+          Vote Later
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+// ── AWARDS VIEW ───────────────────────────────────────────────────────────────
+function AwardsView({ teams, scores, matchups, votes, soupEntries, setSoupEntries, isAdmin }) {
+  const paidTeams = teams.filter(t => t.paid);
+  const ranked = calcLeaderboard(paidTeams, scores, matchups);
+
+  // Tally best dressed votes — count _p1 and _p2 entries separately
+  const dressedTally = {};
+  Object.entries(votes).forEach(([key, v]) => {
+    if (typeof v !== "object" || !v.dressed) return;
+    dressedTally[v.dressed] = (dressedTally[v.dressed] || 0) + 1;
+  });
+  const dressedRanked = paidTeams
+    .map(t => ({ ...t, voteCount: dressedTally[t.id] || 0 }))
+    .sort((a, b) => b.voteCount - a.voteCount)
+    .filter(t => t.voteCount > 0);
+
+  // Tally best soup votes — count _p1 and _p2 entries separately
+  const soupTally = {};
+  Object.entries(votes).forEach(([key, v]) => {
+    if (typeof v !== "object" || !v.soup) return;
+    soupTally[v.soup] = (soupTally[v.soup] || 0) + 1;
+  });
+  const soupRanked = soupEntries
+    .map(s => ({ ...s, voteCount: soupTally[s.number] || 0 }))
+    .sort((a, b) => b.voteCount - a.voteCount)
+    .filter(s => s.voteCount > 0);
+
+  // Lowest score award: worst W/L ratio then fewest points
+  const lowestTeam = ranked.length > 0 ? [...ranked].reverse()[0] : null;
+
+  // Highest achieving female team
+  const topFemale = ranked.find(t => t.teamType === "female") || null;
+
+  // Highest achieving coed team
+  const topCoed = ranked.find(t => t.teamType === "coed") || null;
+
+  const totalVotes = Object.keys(votes).filter(k => k.includes("_p")).length;
+  const medals = ["🥇", "🥈", "🥉"];
+
+  return (
+    <div style={{ padding: "20px 16px" }}>
+      <div style={{ fontFamily: "'Bangers', cursive", fontSize: 28, color: "var(--red)", letterSpacing: 2, textAlign: "center", marginBottom: 20 }}>
+        🏅 SIDE AWARDS
+      </div>
+
+      {/* Best Dressed */}
+      <Card>
+        <div style={{ fontFamily: "'Bangers', cursive", fontSize: 20, color: "var(--teal)", letterSpacing: 1, marginBottom: 4 }}>
+          👗 BEST DRESSED
+        </div>
+        <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 12 }}>{totalVotes} vote{totalVotes !== 1 ? "s" : ""} cast</div>
+        {dressedRanked.length === 0 ? (
+          <p style={{ opacity: 0.5, fontSize: 13 }}>No votes yet — voting opens after teams submit all scores.</p>
+        ) : dressedRanked.map((t, i) => (
+          <div key={t.id} style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "8px 10px", borderRadius: 8, marginBottom: 6,
+            background: i === 0 ? "rgba(42,140,158,0.12)" : "var(--cream)",
+            border: `2px solid ${i === 0 ? "var(--teal)" : "rgba(232,160,32,0.3)"}`,
+          }}>
+            <span style={{ fontSize: 22 }}>{medals[i] || `#${i + 1}`}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 800, fontSize: 13 }}>#{t.number} {t.name}</div>
+              <div style={{ fontSize: 11, opacity: 0.6 }}>{t.player1} & {t.player2}</div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontFamily: "'Bangers', cursive", fontSize: 22, color: "var(--teal)" }}>{t.voteCount}</div>
+              <div style={{ fontSize: 10, opacity: 0.5 }}>votes</div>
+            </div>
+          </div>
+        ))}
+      </Card>
+
+      {/* Best Soup */}
+      <Card>
+        <div style={{ fontFamily: "'Bangers', cursive", fontSize: 20, color: "var(--gold)", letterSpacing: 1, marginBottom: 12 }}>
+          🍲 BEST SOUP
+        </div>
+        {soupRanked.length === 0 ? (
+          <p style={{ opacity: 0.5, fontSize: 13 }}>No votes yet — voting opens after teams submit all scores.</p>
+        ) : soupRanked.map((s, i) => (
+          <div key={s.id} style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "8px 10px", borderRadius: 8, marginBottom: 6,
+            background: i === 0 ? "rgba(232,160,32,0.15)" : "var(--cream)",
+            border: `2px solid ${i === 0 ? "var(--gold)" : "rgba(232,160,32,0.3)"}`,
+          }}>
+            <span style={{ fontSize: 22 }}>{medals[i] || `#${i + 1}`}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontFamily: "'Bangers', cursive", fontSize: 18, color: "var(--gold)" }}>#{s.number}</div>
+              <div style={{ fontSize: 12, fontWeight: 700 }}>{s.name}</div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontFamily: "'Bangers', cursive", fontSize: 22, color: "var(--gold)" }}>{s.voteCount}</div>
+              <div style={{ fontSize: 10, opacity: 0.5 }}>votes</div>
+            </div>
+          </div>
+        ))}
+
+        {/* Admin: rename soups */}
+        {isAdmin && (
+          <div style={{ marginTop: 14, paddingTop: 14, borderTop: "2px solid rgba(232,160,32,0.3)" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: "var(--dark)", marginBottom: 8 }}>✏️ Name Soups (Admin)</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {soupEntries.map(s => (
+                <div key={s.id} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <span style={{ fontFamily: "'Bangers', cursive", fontSize: 16, color: "var(--gold)", minWidth: 24 }}>#{s.number}</span>
+                  <input
+                    value={s.name}
+                    onChange={e => setSoupEntries(prev => prev.map(x => x.id === s.id ? { ...x, name: e.target.value } : x))}
+                    style={{ flex: 1, padding: "5px 8px", borderRadius: 6, border: "2px solid var(--gold)", fontSize: 12, fontFamily: "'Nunito', sans-serif" }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* Highest Achieving Female Team */}
+      <Card>
+        <div style={{ fontFamily: "'Bangers', cursive", fontSize: 20, color: "#D63384", letterSpacing: 1, marginBottom: 12 }}>
+          ♀️ HIGHEST ACHIEVING FEMALE TEAM
+        </div>
+        {!topFemale || topFemale.played === 0 ? (
+          <p style={{ opacity: 0.5, fontSize: 13 }}>Awarded after round robin — based on best W/L ratio then points among all-female teams.</p>
+        ) : (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 12,
+            padding: "12px 14px", borderRadius: 10,
+            background: "rgba(214,51,132,0.08)", border: "2px solid #D63384",
+          }}>
+            <span style={{ fontSize: 32 }}>👑</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 800, fontSize: 15 }}>#{topFemale.number} {topFemale.name}</div>
+              <div style={{ fontSize: 12, opacity: 0.6 }}>{topFemale.player1} & {topFemale.player2}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#D63384", marginTop: 4 }}>
+                W: {topFemale.wins} · L: {topFemale.losses} · PTS: {topFemale.points}
+              </div>
+            </div>
+            <span style={{ fontSize: 28 }}>🥇</span>
+          </div>
+        )}
+      </Card>
+
+      {/* Highest Achieving Coed Team */}
+      <Card>
+        <div style={{ fontFamily: "'Bangers', cursive", fontSize: 20, color: "var(--green)", letterSpacing: 1, marginBottom: 12 }}>
+          ⚡ HIGHEST ACHIEVING COED TEAM
+        </div>
+        {!topCoed || topCoed.played === 0 ? (
+          <p style={{ opacity: 0.5, fontSize: 13 }}>Awarded after round robin — based on best W/L ratio then points among coed teams.</p>
+        ) : (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 12,
+            padding: "12px 14px", borderRadius: 10,
+            background: "rgba(91,138,60,0.08)", border: "2px solid var(--green)",
+          }}>
+            <span style={{ fontSize: 32 }}>⚡</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 800, fontSize: 15 }}>#{topCoed.number} {topCoed.name}</div>
+              <div style={{ fontSize: 12, opacity: 0.6 }}>{topCoed.player1} & {topCoed.player2}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--green)", marginTop: 4 }}>
+                W: {topCoed.wins} · L: {topCoed.losses} · PTS: {topCoed.points}
+              </div>
+            </div>
+            <span style={{ fontSize: 28 }}>🥇</span>
+          </div>
+        )}
+      </Card>
+
+      {/* Lowest Score Award */}
+      <Card>
+        <div style={{ fontFamily: "'Bangers', cursive", fontSize: 20, color: "var(--red)", letterSpacing: 1, marginBottom: 12 }}>
+          💀 LOWEST SCORE AWARD
+        </div>
+        {!lowestTeam || lowestTeam.played === 0 ? (
+          <p style={{ opacity: 0.5, fontSize: 13 }}>Awarded after round robin is complete.</p>
+        ) : (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 12,
+            padding: "12px 14px", borderRadius: 10,
+            background: "rgba(192,57,43,0.08)", border: "2px solid var(--red)",
+          }}>
+            <span style={{ fontSize: 32 }}>🪦</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 800, fontSize: 15 }}>#{lowestTeam.number} {lowestTeam.name}</div>
+              <div style={{ fontSize: 12, opacity: 0.6 }}>{lowestTeam.player1} & {lowestTeam.player2}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--red)", marginTop: 4 }}>
+                W: {lowestTeam.wins} · L: {lowestTeam.losses} · PTS: {lowestTeam.points}
+              </div>
+            </div>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ── BRACKET ───────────────────────────────────────────────────────────────────
+function MatchCard({ match, getTeam, seedOf, advanceWinner }) {
+  const higher = getTeam(match.a); // a is always higher seed
+  const lower  = getTeam(match.b);
+  const hSeed  = seedOf(match.a);
+  const lSeed  = seedOf(match.b);
+
+  return (
+    <div style={{
+      background: "rgba(255,245,220,0.97)",
+      border: "2px solid var(--gold)",
+      borderRadius: 10,
+      overflow: "hidden",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+      minWidth: 150,
+      width: "100%",
+    }}>
+      {/* Game rules banner */}
+      <div style={{
+        background: "var(--teal)", padding: "3px 8px",
+        fontSize: 9, color: "#fff", fontWeight: 800, textAlign: "center", letterSpacing: 0.3,
+      }}>
+        🏅 Higher seed picks G1 · Lower picks G2 · Higher picks TB
+      </div>
+
+      {/* Higher seed row */}
+      <div
+        onClick={() => !match.winner && advanceWinner(match.id, match.a)}
+        style={{
+          display: "flex", alignItems: "center", gap: 6,
+          padding: "7px 8px",
+          background: match.winner === match.a ? "rgba(91,138,60,0.2)" : match.winner === match.b ? "rgba(0,0,0,0.04)" : "#fff",
+          cursor: match.winner ? "default" : "pointer",
+          opacity: match.winner === match.b ? 0.45 : 1,
+          borderBottom: "1px solid rgba(232,160,32,0.4)",
+          transition: "background 0.15s",
+        }}
+      >
+        <span style={{ fontSize: 9, fontWeight: 900, color: "var(--gold)", minWidth: 18, background: "rgba(232,160,32,0.15)", borderRadius: 4, padding: "1px 3px", textAlign: "center" }}>
+          #{hSeed}
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 800, fontSize: 11, color: "var(--dark)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {match.winner === match.a ? "🏆 " : ""}{higher?.name}
+          </div>
+          <div style={{ fontSize: 9, opacity: 0.55 }}>{higher?.player1} & {higher?.player2}</div>
+        </div>
+      </div>
+
+      {/* Lower seed row */}
+      <div
+        onClick={() => !match.winner && advanceWinner(match.id, match.b)}
+        style={{
+          display: "flex", alignItems: "center", gap: 6,
+          padding: "7px 8px",
+          background: match.winner === match.b ? "rgba(91,138,60,0.2)" : match.winner === match.a ? "rgba(0,0,0,0.04)" : "#fff",
+          cursor: match.winner ? "default" : "pointer",
+          opacity: match.winner === match.a ? 0.45 : 1,
+          transition: "background 0.15s",
+        }}
+      >
+        <span style={{ fontSize: 9, fontWeight: 900, color: "var(--red)", minWidth: 18, background: "rgba(192,57,43,0.1)", borderRadius: 4, padding: "1px 3px", textAlign: "center" }}>
+          #{lSeed}
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 800, fontSize: 11, color: "var(--dark)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {match.winner === match.b ? "🏆 " : ""}{lower?.name}
+          </div>
+          <div style={{ fontSize: 9, opacity: 0.55 }}>{lower?.player1} & {lower?.player2}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BracketView({ teams, scores, matchups, bracket, setBracket, bracketScores, setBracketScores, isAdmin }) {
+  const paidTeams = teams.filter(t => t.paid);
+  const ranked = calcLeaderboard(paidTeams, scores, matchups);
+
+  // Map teamId -> seed number (1-based)
+  const seedMap = {};
+  ranked.forEach((t, i) => { seedMap[t.id] = i + 1; });
+  const seedOf = (id) => seedMap[id] ?? "?";
+
+  const bracketSize = Math.pow(2, Math.floor(Math.log2(ranked.length)));
+
+  const generateBracket = () => {
+    const seeded = ranked.slice(0, bracketSize);
+    const n = seeded.length;
+    const matches = [];
+    // Standard bracket: 1v16, 2v15, 3v14 ... higher seed always = match.a
+    for (let i = 0; i < n / 2; i++) {
+      matches.push({
+        id: `r1_${i}`,
+        a: seeded[i].id,       // higher seed
+        b: seeded[n - 1 - i].id, // lower seed
+        winner: null,
+        round: 1,
+        matchNum: i + 1,
+      });
+    }
+    setBracket({ rounds: [matches], currentRound: 1, seedMap });
+  };
+
+  const advanceWinner = (matchId, winnerId) => {
+    setBracket(prev => {
+      const rounds = prev.rounds.map(r => [...r]);
+      const lastIdx = rounds.length - 1;
+      rounds[lastIdx] = rounds[lastIdx].map(m =>
+        m.id === matchId ? { ...m, winner: winnerId } : m
+      );
+      const lastRound = rounds[lastIdx];
+      const allDone = lastRound.every(m => m.winner);
+      if (allDone && lastRound.length > 1) {
+        const nextRound = [];
+        for (let i = 0; i < lastRound.length; i += 2) {
+          const w1 = lastRound[i].winner;
+          const w2 = lastRound[i + 1].winner;
+          // Higher seed (lower seed number) goes to .a
+          const s1 = seedOf(w1), s2 = seedOf(w2);
+          nextRound.push({
+            id: `r${rounds.length + 1}_${i / 2}`,
+            a: s1 <= s2 ? w1 : w2,
+            b: s1 <= s2 ? w2 : w1,
+            winner: null,
+            round: rounds.length + 1,
+            matchNum: i / 2 + 1,
+          });
+        }
+        rounds.push(nextRound);
+      }
+      return { ...prev, rounds };
+    });
+  };
+
+  const getTeam = (id) => paidTeams.find(t => t.id === id);
+  const lastRound = bracket.rounds?.[bracket.rounds.length - 1];
+  const champion = lastRound?.length === 1 && lastRound[0].winner
+    ? getTeam(lastRound[0].winner) : null;
+
+  const roundLabel = (round, ri) => {
+    if (round.length === 1) return "🏆 CHAMPIONSHIP";
+    if (round.length === 2) return "🔥 SEMI-FINALS";
+    if (round.length === 4) return "💥 QUARTER-FINALS";
+    return `ROUND OF ${round.length * 2}`;
+  };
+
+  return (
+    <div style={{ padding: "16px 12px" }}>
+      <div style={{ fontFamily: "'Bangers', cursive", fontSize: 28, color: "var(--red)", letterSpacing: 2, textAlign: "center", marginBottom: 8 }}>
+        🏆 PLAYOFF BRACKET
+      </div>
+
+      {/* Game selection rules */}
+      <div style={{
+        background: "var(--teal)", borderRadius: 10, padding: "10px 14px",
+        marginBottom: 16, color: "#fff",
+      }}>
+        <div style={{ fontFamily: "'Bangers', cursive", fontSize: 15, letterSpacing: 1, marginBottom: 4 }}>📋 GAME SELECTION RULES</div>
+        <div style={{ fontSize: 12, fontWeight: 700, lineHeight: 1.7 }}>
+          🥇 Higher seed picks <strong>Game 1</strong><br />
+          🥈 Lower seed picks <strong>Game 2</strong><br />
+          🔺 Higher seed picks <strong>Tiebreaker</strong> (if needed)
+        </div>
+      </div>
+
+      {champion && (
+        <div style={{
+          background: "linear-gradient(135deg, rgba(232,160,32,0.3), rgba(232,160,32,0.1))",
+          border: "3px solid var(--gold)", borderRadius: 16, padding: "20px",
+          textAlign: "center", marginBottom: 16,
+        }}>
+          <div style={{ fontSize: 52 }}>🏆</div>
+          <div style={{ fontFamily: "'Bangers', cursive", fontSize: 28, color: "var(--gold)", letterSpacing: 2 }}>CHAMPION!</div>
+          <div style={{ fontWeight: 800, fontSize: 17, color: "var(--dark)", marginTop: 4 }}>#{champion.number} {champion.name}</div>
+          <div style={{ fontSize: 12, opacity: 0.6 }}>{champion.player1} & {champion.player2}</div>
+        </div>
+      )}
+
+      {!bracket.rounds && (
+        <div style={{ textAlign: "center", padding: "20px 0" }}>
+          <p style={{ opacity: 0.6, fontSize: 13, marginBottom: 16, lineHeight: 1.6 }}>
+            Bracket is seeded by win/loss ratio, then total points.<br />
+            Top {bracketSize} teams advance to playoffs ({paidTeams.length} teams registered — bracket size auto-adjusts to nearest power of 2).
+          </p>
+          {isAdmin ? (
+            <Btn onClick={generateBracket} color="var(--red)">🎲 Generate Bracket</Btn>
+          ) : (
+            <div style={{ background: "rgba(192,57,43,0.08)", border: "2px solid rgba(192,57,43,0.2)", borderRadius: 10, padding: "12px 16px", display: "inline-block" }}>
+              <div style={{ fontSize: 24 }}>🔒</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--dark)", marginTop: 4 }}>Admin only</div>
+              <div style={{ fontSize: 11, opacity: 0.6 }}>The organizer will generate the bracket when round robin is complete.</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Visual bracket: scroll horizontally, rounds side by side */}
+      {bracket.rounds && (
+        <div style={{ overflowX: "auto", paddingBottom: 12 }}>
+          <div style={{
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "flex-start",
+            gap: 0,
+            minWidth: bracket.rounds.length * 170,
+          }}>
+            {bracket.rounds.map((round, ri) => {
+              const matchCount = round.length;
+              const totalSlots = bracket.rounds[0].length; // always R1 match count
+              const slotHeight = 90; // px per match slot in R1
+              const spacer = Math.pow(2, ri); // matches skip between rows double each round
+
+              return (
+                <div key={ri} style={{ display: "flex", flexDirection: "column", minWidth: 160, flex: "0 0 160px" }}>
+                  {/* Round header */}
+                  <div style={{
+                    fontFamily: "'Bangers', cursive", fontSize: 13,
+                    color: "var(--red)", letterSpacing: 1,
+                    textAlign: "center", padding: "0 4px 8px",
+                    borderBottom: "2px solid var(--gold)", marginBottom: 8,
+                  }}>
+                    {roundLabel(round, ri)}
+                  </div>
+
+                  {/* Matches spaced to align with connector lines */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                    {round.map((match, mi) => {
+                      // Vertical offset: center each match in its "slot" which doubles each round
+                      const slotSize = slotHeight * spacer;
+                      const topPad = mi === 0 ? (slotSize - slotHeight) / 2 : (slotSize - slotHeight) / 2;
+                      const betweenGap = mi > 0 ? slotSize - slotHeight : 0;
+
+                      return (
+                        <div key={match.id} style={{
+                          marginTop: mi === 0 ? topPad : betweenGap + topPad,
+                          paddingRight: ri < bracket.rounds.length - 1 ? 12 : 0,
+                          position: "relative",
+                        }}>
+                          <MatchCard
+                            match={match}
+                            getTeam={getTeam}
+                            seedOf={seedOf}
+                            advanceWinner={advanceWinner}
+                          />
+                          {/* Connector line to right */}
+                          {ri < bracket.rounds.length - 1 && (
+                            <div style={{
+                              position: "absolute",
+                              right: 0, top: "50%",
+                              width: 12, height: 2,
+                              background: "var(--gold)",
+                              transform: "translateY(-50%)",
+                            }} />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {bracket.rounds && !champion && (
+        <p style={{ textAlign: "center", fontSize: 11, opacity: 0.5, marginTop: 12 }}>
+          Tap the winning team in each matchup to advance them
+        </p>
+      )}
+
+      {bracket.rounds && isAdmin && (
+        <div style={{ textAlign: "center", marginTop: 16 }}>
+          <Btn small color="var(--teal)" onClick={() => { if (window.confirm("Reset bracket?")) setBracket({}); }}>
+            🔄 Reset Bracket
+          </Btn>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── ADMIN ─────────────────────────────────────────────────────────────────────
+function AdminView({ teams, setTeams, matchups, setMatchups, scores, setScores, bracket, setBracket, bracketScores, setBracketScores, tournamentSettings, setTournamentSettings, isAdmin, setIsAdmin, votes, setVotes, soupEntries, setSoupEntries }) {
+  const [authed, setAuthed] = useState(isAdmin);
+  const [pw, setPw] = useState("");
+  const paidTeams = teams.filter(t => t.paid);
+
+  if (!authed) return (
+    <div style={{ padding: "30px 16px" }}>
+      <Card style={{ maxWidth: 340, margin: "0 auto", textAlign: "center" }}>
+        <div style={{ fontFamily: "'Bangers', cursive", fontSize: 24, color: "var(--red)", marginBottom: 16, letterSpacing: 1 }}>⚙️ ADMIN LOGIN</div>
+        <Input label="Password" value={pw} onChange={setPw} type="password" placeholder="Enter admin password" />
+        <Btn onClick={() => { if (pw === ADMIN_PASSWORD) { setAuthed(true); setIsAdmin(true); } else alert("Wrong password."); }} color="var(--red)" style={{ width: "100%" }}>Login</Btn>
+      </Card>
+    </div>
+  );
+
+  const generateMatchups = () => {
+    if (paidTeams.length < 2) return alert("Need at least 2 paid teams.");
+    const newMatchups = generateUniqueMatchups(paidTeams, GAMES);
+    setMatchups(newMatchups);
+  };
+
+  return (
+    <div style={{ padding: "20px 16px" }}>
+      <div style={{ fontFamily: "'Bangers', cursive", fontSize: 26, color: "var(--red)", letterSpacing: 2, textAlign: "center", marginBottom: 16 }}>
+        ⚙️ ADMIN PANEL
+      </div>
+
+      {/* Settings */}
+      <Card>
+        <div style={{ fontFamily: "'Bangers', cursive", fontSize: 18, color: "var(--teal)", letterSpacing: 1, marginBottom: 12 }}>🛠 SETTINGS</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, background: "var(--cream)", padding: "10px 12px", borderRadius: 8, border: "2px solid var(--gold)" }}>
+          <span style={{ fontWeight: 700, fontSize: 14 }}>Registration Open</span>
+          <button onClick={() => setTournamentSettings(p => ({ ...p, registrationOpen: !p.registrationOpen }))} style={{
+            background: tournamentSettings.registrationOpen ? "var(--green)" : "#ccc",
+            border: "none", borderRadius: 20, padding: "6px 16px", cursor: "pointer",
+            fontWeight: 800, fontSize: 12, color: "#fff", fontFamily: "'Nunito', sans-serif",
+          }}>
+            {tournamentSettings.registrationOpen ? "OPEN" : "CLOSED"}
+          </button>
+        </div>
+        <Input label="Venmo Handle" value={tournamentSettings.venmo || ""} onChange={v => setTournamentSettings(p => ({ ...p, venmo: v }))} placeholder="@handle" />
+        <Input label="CashApp Tag" value={tournamentSettings.cashapp || ""} onChange={v => setTournamentSettings(p => ({ ...p, cashapp: v }))} placeholder="$YourTag" />
+      </Card>
+
+      {/* Teams */}
+      <Card>
+        <div style={{ fontFamily: "'Bangers', cursive", fontSize: 18, color: "var(--teal)", letterSpacing: 1, marginBottom: 12 }}>
+          👥 TEAMS ({teams.length}) — {paidTeams.length} PAID
+        </div>
+        {teams.map(t => (
+          <div key={t.id} style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "8px 10px", borderRadius: 8, marginBottom: 6,
+            background: t.paid ? "rgba(91,138,60,0.1)" : "rgba(192,57,43,0.07)",
+            border: `2px solid ${t.paid ? "var(--green)" : "rgba(192,57,43,0.25)"}`,
+          }}>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 13 }}>#{t.number} {t.name}</div>
+              <div style={{ fontSize: 11, opacity: 0.6 }}>{t.player1} & {t.player2}</div>
+              {t.teamType && <div style={{ fontSize: 10, fontWeight: 800, color: t.teamType === "female" ? "#D63384" : t.teamType === "coed" ? "var(--green)" : "var(--teal)" }}>
+                {t.teamType === "female" ? "♀️ Female" : t.teamType === "coed" ? "⚡ Coed" : "♂️ Male"}
+              </div>}
+              {t.byeOk && <div style={{ fontSize: 10, color: "var(--teal)", fontWeight: 700 }}>OK with bye {t.byePref ? `(pref: ${GAMES.find(g => g.id === t.byePref)?.name})` : ""}</div>}
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <Btn small color={t.paid ? "#ccc" : "var(--green)"}
+                onClick={() => setTeams(prev => prev.map(x => x.id === t.id ? { ...x, paid: !x.paid } : x))}>
+                {t.paid ? "Unpay" : "✅ Mark Paid"}
+              </Btn>
+              <Btn small color="var(--red)"
+                onClick={() => { if (window.confirm(`Remove ${t.name}?`)) setTeams(prev => prev.filter(x => x.id !== t.id)); }}>
+                ✕
+              </Btn>
+            </div>
+          </div>
+        ))}
+        {teams.length === 0 && <p style={{ opacity: 0.5, fontSize: 13 }}>No teams registered yet.</p>}
+      </Card>
+
+      {/* Round Robin Controls */}
+      <Card>
+        <div style={{ fontFamily: "'Bangers', cursive", fontSize: 18, color: "var(--teal)", letterSpacing: 1, marginBottom: 12 }}>🎮 ROUND ROBIN</div>
+        <Btn onClick={generateMatchups} color="var(--red)" style={{ width: "100%", marginBottom: 10 }}>
+          {Object.keys(matchups).length ? "🔀 Re-Randomize Matchups" : "🎲 Generate Matchups"}
+        </Btn>
+        {Object.keys(matchups).length > 0 && (
+          <div>
+            {GAMES.map(g => (
+              <div key={g.id} style={{ marginBottom: 10 }}>
+                <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 4 }}>{g.emoji} {g.name}</div>
+                {matchups[g.id]?.map((m, i) => {
+                  const ta = paidTeams.find(t => t.id === m.a);
+                  const tb = paidTeams.find(t => t.id === m.b);
+                  return (
+                    <div key={i} style={{ fontSize: 12, opacity: 0.8, padding: "4px 8px", background: "var(--cream)", borderRadius: 6, marginBottom: 4 }}>
+                      {m.bye ? `BYE: #${ta?.number} ${ta?.name}` : `#${ta?.number} ${ta?.name} vs #${tb?.number} ${tb?.name}`}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Scores Override */}
+      <Card>
+        <div style={{ fontFamily: "'Bangers', cursive", fontSize: 18, color: "var(--teal)", letterSpacing: 1, marginBottom: 8 }}>📊 SCORES</div>
+        <p style={{ fontSize: 12, opacity: 0.6, marginBottom: 10 }}>{Object.keys(scores).length} score entries recorded.</p>
+        {Object.keys(scores).length > 0 && (
+          <Btn small color="var(--red)" onClick={() => { if (window.confirm("Clear all scores?")) setScores({}); }}>
+            🗑 Clear All Scores
+          </Btn>
+        )}
+      </Card>
+
+      {/* Reset */}
+      <Card>
+        <div style={{ fontFamily: "'Bangers', cursive", fontSize: 18, color: "var(--red)", letterSpacing: 1, marginBottom: 8 }}>⚠️ DANGER ZONE</div>
+        <Btn color="var(--red)" style={{ width: "100%" }}
+          onClick={() => { if (window.confirm("Reset entire tournament? This cannot be undone.")) { setTeams([]); setMatchups({}); setScores({}); setBracket({}); setBracketScores({}); setVotes({}); } }}>
+          🔄 Reset Entire Tournament
+        </Btn>
+      </Card>
+    </div>
+  );
+}
+
+// ── Demo Teams ───────────────────────────────────────────────────────────────
+const DEMO_TEAMS = [
+  { player1: "Jake Miller",    player2: "Chris Evans",    name: "Miller Time" },
+  { player1: "Sarah Johnson",  player2: "Amy Lee",        name: "Dynamic Duo" },
+  { player1: "Tom Brady",      player2: "Rob Gronkowski", name: "TB & Gronk" },
+  { player1: "Mike Scott",     player2: "Dwight Schrute", name: "Dunder Champs" },
+  { player1: "Lisa Park",      player2: "Nina Chen",      name: "Girl Power" },
+  { player1: "Dave Wilson",    player2: "Steve Adams",    name: "Beer Pressure" },
+  { player1: "Kevin Hart",     player2: "Dwayne Rock",    name: "Small & Tall" },
+  { player1: "Emma Davis",     player2: "Olivia Brown",   name: "Team Chaos" },
+  { player1: "Ryan Moore",     player2: "Tyler White",    name: "The Ryans" },
+  { player1: "Zach King",      player2: "Ben Foster",     name: "Kings & Fosters" },
+  { player1: "Jenna Walsh",    player2: "Megan Fox",      name: "The Foxes" },
+  { player1: "Dan Harris",     player2: "Paul Young",     name: "Dad Energy" },
+  { player1: "Carlos Rivera",  player2: "Juan Lopez",     name: "Dos Amigos" },
+  { player1: "Ashley Green",   player2: "Brittany Blue",  name: "Color Block" },
+  { player1: "Nick Cage",      player2: "John Travolta",  name: "Hollywood" },
+  { player1: "Sam Wright",     player2: "Joe Left",       name: "Wright & Left" },
+  { player1: "Tina Turner",    player2: "Donna Summer",   name: "Legends" },
+  { player1: "Marcus Reed",    player2: "Jerome Banks",   name: "Reed the Room" },
+  { player1: "Cody Lane",      player2: "Brett Hill",     name: "Party Animals" },
+  { player1: "Holly Sharp",    player2: "Kate Bold",      name: "Sharp & Bold" },
+  { player1: "Pete Ramos",     player2: "Tony Cruz",      name: "The Wildcards" },
+].map((t, i) => ({
+  ...t,
+  id: 1000 + i,
+  number: i + 1,
+  paid: true,
+  byeOk: [0, 4, 8, 12, 16, 20].includes(i),
+  byePref: [0, 4, 8, 12, 16, 20].includes(i) ? GAMES[i % GAMES.length].id : "",
+  teamType: ["male","female","coed","male","female","coed","male","coed","female","male","coed","female","male","coed","female","male","female","coed","male","coed","female"][i],
+  registeredAt: "Demo",
+}));
+
+// ── APP ───────────────────────────────────────────────────────────────────────
+function App() {
+  const [view, setView] = useState("home");
+  // Pre-generate matchups for demo using the unique algorithm
+  const initMatchups = () => generateUniqueMatchups(DEMO_TEAMS, GAMES);
+
+  // Pre-generate demo scores: winner always hits max pts, loser gets random lower score
+  const initScores = (matchups) => {
+    const sc = {};
+    GAMES.forEach(g => {
+      (matchups[g.id] || []).forEach(m => {
+        if (m.bye) return;
+        const key = `${m.a}_${m.b}_${g.id}`;
+        const loserScore = Math.floor(Math.random() * g.maxPts); // 0 to maxPts-1
+        const aWins = Math.random() > 0.5;
+        const aScore = aWins ? g.maxPts : loserScore;
+        const bScore = aWins ? loserScore : g.maxPts;
+        sc[key] = { aScore, bScore, confirmed: true };
+      });
+    });
+    return sc;
+  };
+
+  const demoMatchups = initMatchups();
+  const demoScores = initScores(demoMatchups);
+
+  const SEVEN_TEAMS = [
+    { id: 2001, number: 1, name: "Team Alpha",   player1: "Player 1", player2: "Player 2", teamType: "male",   paid: true, byeOk: false, byePref: "", registeredAt: "Demo" },
+    { id: 2002, number: 2, name: "Team Bravo",   player1: "Player 3", player2: "Player 4", teamType: "female", paid: true, byeOk: false, byePref: "", registeredAt: "Demo" },
+    { id: 2003, number: 3, name: "Team Charlie", player1: "Player 5", player2: "Player 6", teamType: "coed",   paid: true, byeOk: false, byePref: "", registeredAt: "Demo" },
+    { id: 2004, number: 4, name: "Team Delta",   player1: "Player 7", player2: "Player 8", teamType: "male",   paid: true, byeOk: true,  byePref: "", registeredAt: "Demo" },
+    { id: 2005, number: 5, name: "Team Echo",    player1: "Player 9", player2: "Player 10", teamType: "coed",  paid: true, byeOk: false, byePref: "", registeredAt: "Demo" },
+    { id: 2006, number: 6, name: "Team Foxtrot", player1: "Player 11", player2: "Player 12", teamType: "female", paid: true, byeOk: true, byePref: "", registeredAt: "Demo" },
+    { id: 2007, number: 7, name: "Team Golf",    player1: "Player 13", player2: "Player 14", teamType: "male",   paid: true, byeOk: true, byePref: "", registeredAt: "Demo" },
+  ];
+
+  const [teams, setTeams] = useState(SEVEN_TEAMS);
+  const [matchups, setMatchups] = useState({});
+  const [scores, setScores] = useState({});
+  const [bracket, setBracket] = useState({});
+  const [bracketScores, setBracketScores] = useState({});
+  const [currentTeamId, setCurrentTeamId] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [votes, setVotes] = useState({});         // { teamId: { dressed: teamId, soup: soupNum } }
+  const [soupEntries, setSoupEntries] = useState( // 15 soup entries numbered 1-15
+    Array.from({ length: 15 }, (_, i) => ({ id: i + 1, number: i + 1, name: `Soup #${i + 1}` }))
+  );
+  const [tournamentSettings, setTournamentSettings] = useState({
+    registrationOpen: true,
+    venmo: "YardGameXtravaganza",
+    cashapp: "YardGameXtravaganza",
+  });
+
+  // ── Firebase sync ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    const paths = ["teams", "matchups", "scores", "bracket", "bracketScores", "tournamentSettings", "votes", "soupEntries"];
+    const setters = { teams: setTeams, matchups: setMatchups, scores: setScores, bracket: setBracket, bracketScores: setBracketScores, tournamentSettings: setTournamentSettings, votes: setVotes, soupEntries: setSoupEntries };
+    const unsubs = paths.map(path => {
+      const r = ref(db, path);
+      return onValue(r, snap => {
+        const val = snap.val();
+        if (val !== null && val !== undefined) {
+          // teams and soupEntries are stored as objects keyed by id — convert back to array
+          if (path === "teams") setTeams(Array.isArray(val) ? val : Object.values(val));
+          else if (path === "soupEntries") setSoupEntries(Array.isArray(val) ? val : Object.values(val));
+          else setters[path](val);
+        }
+      });
+    });
+    return () => unsubs.forEach(u => u());
+  }, []);
+
+  // ── Write helpers ───────────────────────────────────────────────────────────
+  const fbSet = (path, val) => set(ref(db, path), val);
+
+  // Firebase-aware setters — update local state AND Firebase simultaneously
+  const setTeamsFb       = v => { const val = typeof v === "function" ? v(teams) : v;       setTeams(val);           fbSet("teams", val); };
+  const setMatchupsFb    = v => { const val = typeof v === "function" ? v(matchups) : v;    setMatchups(val);        fbSet("matchups", val); };
+  const setScoresFb      = v => { const val = typeof v === "function" ? v(scores) : v;      setScores(val);          fbSet("scores", val); };
+  const setBracketFb     = v => { const val = typeof v === "function" ? v(bracket) : v;     setBracket(val);         fbSet("bracket", val); };
+  const setVotesFb       = v => { const val = typeof v === "function" ? v(votes) : v;       setVotes(val);           fbSet("votes", val); };
+  const setSoupFb        = v => { const val = typeof v === "function" ? v(soupEntries) : v; setSoupEntries(val);     fbSet("soupEntries", val); };
+  const setSettingsFb    = v => { const val = typeof v === "function" ? v(tournamentSettings) : v; setTournamentSettings(val); fbSet("tournamentSettings", val); };
+
+  const views = {
+    home: <HomeView onNav={setView} teams={teams} />,
+    rules: <RulesView />,
+    register: <RegisterView teams={teams} setTeams={setTeamsFb} tournamentSettings={tournamentSettings} />,
+    roundrobin: <RoundRobinView teams={teams} matchups={matchups} setMatchups={setMatchupsFb} scores={scores} setScores={setScoresFb} currentTeamId={currentTeamId} setCurrentTeamId={setCurrentTeamId} votes={votes} setVotes={setVotesFb} soupEntries={soupEntries} />,
+    leaderboard: <LeaderboardView teams={teams} scores={scores} matchups={matchups} />,
+    awards: <AwardsView teams={teams} scores={scores} matchups={matchups} votes={votes} soupEntries={soupEntries} setSoupEntries={setSoupFb} isAdmin={isAdmin} />,
+    bracket: <BracketView teams={teams} scores={scores} matchups={matchups} bracket={bracket} setBracket={setBracketFb} bracketScores={bracketScores} setBracketScores={setBracketScores} isAdmin={isAdmin} />,
+    admin: <AdminView teams={teams} setTeams={setTeamsFb} matchups={matchups} setMatchups={setMatchupsFb} scores={scores} setScores={setScoresFb} bracket={bracket} setBracket={setBracketFb} bracketScores={bracketScores} setBracketScores={setBracketScores} tournamentSettings={tournamentSettings} setTournamentSettings={setSettingsFb} isAdmin={isAdmin} setIsAdmin={setIsAdmin} votes={votes} setVotes={setVotesFb} soupEntries={soupEntries} setSoupEntries={setSoupFb} />,
+  };
+
+  return (
+    <>
+      <FontLink />
+      <div style={{ minHeight: "100vh", background: "var(--cream)", position: "relative", maxWidth: 480, margin: "0 auto" }}>
+        <Sunburst />
+        <div style={{ position: "relative", zIndex: 1 }}>
+          <Header onNav={setView} view={view} isAdmin={isAdmin} />
+          <div style={{ paddingBottom: 40 }}>
+            {views[view]}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+
+    waitForFirebase(() => {
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(<App />);
+    });
+  </script>
+</body>
+</html>
