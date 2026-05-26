@@ -39,7 +39,6 @@
   <script type="text/babel" data-presets="react">
     const { useState, useEffect, useCallback } = React;
 
-    // Wait for Firebase before rendering
     function waitForFirebase(cb) {
       if (window.__firebase) { cb(); return; }
       window.addEventListener("firebaseReady", cb, { once: true });
@@ -56,7 +55,7 @@ const firebaseConfig = {
   appId: "1:140506841100:web:ea4b64878a47745475ee29",
   databaseURL: "https://yard-game-extravaganza-default-rtdb.firebaseio.com",
 };
-// Firebase loaded via CDN module above
+// Firebase loaded via CDN
 const { db, ref, onValue, set } = window.__firebase || {};
 
 // ── Google Fonts ──────────────────────────────────────────────────────────────
@@ -87,6 +86,8 @@ const GAMES = [
 ];
 
 const ADMIN_PASSWORD = "legend92";
+const isPaid = (t) => t ? (t.p1paid && t.p2paid) : false;
+const isPartiallyPaid = (t) => t ? (t.p1paid || t.p2paid) && !(t.p1paid && t.p2paid) : false;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function shuffle(arr) {
@@ -380,7 +381,9 @@ function RegisterView({ teams, setTeams, tournamentSettings }) {
       byeOk,
       byePref,
       teamType,
-      paid: false,
+      p1paid: false,
+      p2paid: false,
+      get paid() { return this.p1paid && this.p2paid; },
       registeredAt: new Date().toLocaleTimeString(),
     };
     setPendingTeam(team);
@@ -402,7 +405,7 @@ function RegisterView({ teams, setTeams, tournamentSettings }) {
         <div style={{ fontWeight: 800, fontSize: 15, color: "var(--red)", marginBottom: 6 }}>Team #{pendingTeam.number}</div>
         <div style={{ fontWeight: 700 }}>{pendingTeam.name}</div>
         <div style={{ fontSize: 13, opacity: 0.7, marginTop: 4 }}>{pendingTeam.player1} & {pendingTeam.player2}</div>
-        {pendingTeam.paid && <div style={{ color: "var(--green)", fontWeight: 800, marginTop: 8 }}>✅ Payment confirmed</div>}
+        {(pendingTeam.p1paid || pendingTeam.p2paid) && <div style={{ color: "var(--gold)", fontWeight: 800, marginTop: 8 }}>⏳ Payment pending admin confirmation</div>}
       </Card>
       <Btn onClick={() => { setStep("form"); setP1(""); setP2(""); setTeamName(""); setByeOk(false); setByePref(""); }}
         color="var(--teal)" style={{ marginTop: 8 }}>Register Another Team</Btn>
@@ -421,11 +424,11 @@ function RegisterView({ teams, setTeams, tournamentSettings }) {
         </div>
 
         <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-          <a href={`https://venmo.com/${tournamentSettings.venmo || "YardGameXtravaganza"}?txn=pay&amount=30&note=YGE+Team+${pendingTeam?.number}+${encodeURIComponent(pendingTeam?.name || "")}`}
+          <a href={`https://venmo.com/u/${tournamentSettings.venmo || "Lucas-Hanneken"}?txn=pay&amount=30&note=YGE+Team+${pendingTeam?.number}+${encodeURIComponent(pendingTeam?.name || "")}`}
             target="_blank" rel="noopener noreferrer" style={{ flex: 1, textDecoration: "none" }}>
             <Btn color="#3D95CE" style={{ width: "100%" }}>💙 Pay via Venmo</Btn>
           </a>
-          <a href={`https://cash.app/$${tournamentSettings.cashapp || "YardGameXtravaganza"}`}
+          <a href={`https://cash.app/$${tournamentSettings.cashapp || "LucasHanneken"}`}
             target="_blank" rel="noopener noreferrer" style={{ flex: 1, textDecoration: "none" }}>
             <Btn color="#00C244" style={{ width: "100%" }}>💚 Pay via CashApp</Btn>
           </a>
@@ -520,8 +523,8 @@ function RegisterView({ teams, setTeams, tournamentSettings }) {
             <div key={t.id} style={{
               display: "flex", justifyContent: "space-between", alignItems: "center",
               padding: "8px 10px", borderRadius: 8, marginBottom: 6,
-              background: t.paid ? "rgba(91,138,60,0.1)" : "rgba(192,57,43,0.07)",
-              border: `2px solid ${t.paid ? "var(--green)" : "rgba(192,57,43,0.2)"}`,
+              background: isPaid(t) ? "rgba(91,138,60,0.1)" : isPartiallyPaid(t) ? "rgba(232,160,32,0.1)" : "rgba(192,57,43,0.07)",
+              border: `2px solid ${isPaid(t) ? "var(--green)" : isPartiallyPaid(t) ? "var(--gold)" : "rgba(192,57,43,0.2)"}`,
             }}>
               <div>
                 <span style={{ fontWeight: 800, fontSize: 13 }}>#{t.number} {t.name}</span>
@@ -529,9 +532,14 @@ function RegisterView({ teams, setTeams, tournamentSettings }) {
                 {t.teamType && <div style={{ fontSize: 10, fontWeight: 800, color: t.teamType === "female" ? "#D63384" : t.teamType === "coed" ? "var(--green)" : "var(--teal)" }}>
                   {t.teamType === "female" ? "♀️ All Female" : t.teamType === "coed" ? "⚡ Coed" : "♂️ All Male"}
                 </div>}
+                <div style={{ fontSize: 10, fontWeight: 800 }}>
+                  <span style={{ color: t.p1paid ? "var(--green)" : "var(--red)" }}>{t.player1}: {t.p1paid ? "✅" : "⏳"}</span>
+                  {" · "}
+                  <span style={{ color: t.p2paid ? "var(--green)" : "var(--red)" }}>{t.player2}: {t.p2paid ? "✅" : "⏳"}</span>
+                </div>
               </div>
-              <span style={{ fontSize: 11, fontWeight: 800, color: t.paid ? "var(--green)" : "var(--red)" }}>
-                {t.paid ? "✅ PAID" : "⏳ PENDING"}
+              <span style={{ fontSize: 11, fontWeight: 800, color: isPaid(t) ? "var(--green)" : isPartiallyPaid(t) ? "var(--gold)" : "var(--red)" }}>
+                {isPaid(t) ? "✅ PAID" : isPartiallyPaid(t) ? "½ PARTIAL" : "⏳ PENDING"}
               </span>
             </div>
           ))}
@@ -548,7 +556,7 @@ function RoundRobinView({ teams, matchups, setMatchups, scores, setScores, curre
   const [teamSearch, setTeamSearch] = useState("");
   const [showVoting, setShowVoting] = useState(false);
 
-  const paidTeams = teams.filter(t => t.paid);
+  const paidTeams = teams.filter(t => isPaid(t));
 
   const myTeam = paidTeams.find(t => t.id === currentTeamId);
 
@@ -1064,7 +1072,7 @@ function RulesView() {
 
 // ── LEADERBOARD ───────────────────────────────────────────────────────────────
 function LeaderboardView({ teams, scores, matchups }) {
-  const paidTeams = teams.filter(t => t.paid);
+  const paidTeams = teams.filter(t => isPaid(t));
   const ranked = calcLeaderboard(paidTeams, scores, matchups);
   const medals = ["🥇", "🥈", "🥉"];
 
@@ -1108,7 +1116,7 @@ function LeaderboardView({ teams, scores, matchups }) {
 
 // ── VOTING MODAL ─────────────────────────────────────────────────────────────
 function VotingModal({ currentTeamId, teams, soupEntries, votes, setVotes, onClose }) {
-  const paidTeams = teams.filter(t => t.paid);
+  const paidTeams = teams.filter(t => isPaid(t));
   const myTeam = paidTeams.find(t => t.id === currentTeamId);
   const players = [myTeam?.player1, myTeam?.player2].filter(Boolean);
 
@@ -1249,7 +1257,7 @@ function VotingModal({ currentTeamId, teams, soupEntries, votes, setVotes, onClo
 
 // ── AWARDS VIEW ───────────────────────────────────────────────────────────────
 function AwardsView({ teams, scores, matchups, votes, soupEntries, setSoupEntries, isAdmin }) {
-  const paidTeams = teams.filter(t => t.paid);
+  const paidTeams = teams.filter(t => isPaid(t));
   const ranked = calcLeaderboard(paidTeams, scores, matchups);
 
   // Tally best dressed votes — count _p1 and _p2 entries separately
@@ -1522,7 +1530,7 @@ function MatchCard({ match, getTeam, seedOf, advanceWinner }) {
 }
 
 function BracketView({ teams, scores, matchups, bracket, setBracket, bracketScores, setBracketScores, isAdmin }) {
-  const paidTeams = teams.filter(t => t.paid);
+  const paidTeams = teams.filter(t => isPaid(t));
   const ranked = calcLeaderboard(paidTeams, scores, matchups);
 
   // Map teamId -> seed number (1-based)
@@ -1733,7 +1741,7 @@ function BracketView({ teams, scores, matchups, bracket, setBracket, bracketScor
 function AdminView({ teams, setTeams, matchups, setMatchups, scores, setScores, bracket, setBracket, bracketScores, setBracketScores, tournamentSettings, setTournamentSettings, isAdmin, setIsAdmin, votes, setVotes, soupEntries, setSoupEntries }) {
   const [authed, setAuthed] = useState(isAdmin);
   const [pw, setPw] = useState("");
-  const paidTeams = teams.filter(t => t.paid);
+  const paidTeams = teams.filter(t => isPaid(t));
 
   if (!authed) return (
     <div style={{ padding: "30px 16px" }}>
@@ -1792,13 +1800,24 @@ function AdminView({ teams, setTeams, matchups, setMatchups, scores, setScores, 
               {t.teamType && <div style={{ fontSize: 10, fontWeight: 800, color: t.teamType === "female" ? "#D63384" : t.teamType === "coed" ? "var(--green)" : "var(--teal)" }}>
                 {t.teamType === "female" ? "♀️ Female" : t.teamType === "coed" ? "⚡ Coed" : "♂️ Male"}
               </div>}
+              <div style={{ fontSize: 10, fontWeight: 800 }}>
+                <span style={{ color: t.p1paid ? "var(--green)" : "var(--red)" }}>{t.player1}: {t.p1paid ? "✅" : "⏳"}</span>
+                {" · "}
+                <span style={{ color: t.p2paid ? "var(--green)" : "var(--red)" }}>{t.player2}: {t.p2paid ? "✅" : "⏳"}</span>
+              </div>
               {t.byeOk && <div style={{ fontSize: 10, color: "var(--teal)", fontWeight: 700 }}>OK with bye {t.byePref ? `(pref: ${GAMES.find(g => g.id === t.byePref)?.name})` : ""}</div>}
             </div>
             <div style={{ display: "flex", gap: 6 }}>
-              <Btn small color={t.paid ? "#ccc" : "var(--green)"}
-                onClick={() => setTeams(prev => prev.map(x => x.id === t.id ? { ...x, paid: !x.paid } : x))}>
-                {t.paid ? "Unpay" : "✅ Mark Paid"}
-              </Btn>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <Btn small color={t.p1paid ? "#aaa" : "var(--green)"}
+                  onClick={() => setTeams(prev => prev.map(x => x.id === t.id ? { ...x, p1paid: !x.p1paid } : x))}>
+                  {t.p1paid ? `✅ ${t.player1}` : `💰 ${t.player1}`}
+                </Btn>
+                <Btn small color={t.p2paid ? "#aaa" : "var(--green)"}
+                  onClick={() => setTeams(prev => prev.map(x => x.id === t.id ? { ...x, p2paid: !x.p2paid } : x))}>
+                  {t.p2paid ? `✅ ${t.player2}` : `💰 ${t.player2}`}
+                </Btn>
+              </div>
               <Btn small color="var(--red)"
                 onClick={() => { if (window.confirm(`Remove ${t.name}?`)) setTeams(prev => prev.filter(x => x.id !== t.id)); }}>
                 ✕
@@ -1919,13 +1938,13 @@ function App() {
   const demoScores = initScores(demoMatchups);
 
   const SEVEN_TEAMS = [
-    { id: 2001, number: 1, name: "Team Alpha",   player1: "Player 1", player2: "Player 2", teamType: "male",   paid: true, byeOk: false, byePref: "", registeredAt: "Demo" },
-    { id: 2002, number: 2, name: "Team Bravo",   player1: "Player 3", player2: "Player 4", teamType: "female", paid: true, byeOk: false, byePref: "", registeredAt: "Demo" },
-    { id: 2003, number: 3, name: "Team Charlie", player1: "Player 5", player2: "Player 6", teamType: "coed",   paid: true, byeOk: false, byePref: "", registeredAt: "Demo" },
-    { id: 2004, number: 4, name: "Team Delta",   player1: "Player 7", player2: "Player 8", teamType: "male",   paid: true, byeOk: true,  byePref: "", registeredAt: "Demo" },
-    { id: 2005, number: 5, name: "Team Echo",    player1: "Player 9", player2: "Player 10", teamType: "coed",  paid: true, byeOk: false, byePref: "", registeredAt: "Demo" },
-    { id: 2006, number: 6, name: "Team Foxtrot", player1: "Player 11", player2: "Player 12", teamType: "female", paid: true, byeOk: true, byePref: "", registeredAt: "Demo" },
-    { id: 2007, number: 7, name: "Team Golf",    player1: "Player 13", player2: "Player 14", teamType: "male",   paid: true, byeOk: true, byePref: "", registeredAt: "Demo" },
+    { id: 2001, number: 1, name: "Team Alpha",   player1: "Player 1", player2: "Player 2", teamType: "male",   p1paid: true, p2paid: true, byeOk: false, byePref: "", registeredAt: "Demo" },
+    { id: 2002, number: 2, name: "Team Bravo",   player1: "Player 3", player2: "Player 4", teamType: "female", p1paid: true, p2paid: true, byeOk: false, byePref: "", registeredAt: "Demo" },
+    { id: 2003, number: 3, name: "Team Charlie", player1: "Player 5", player2: "Player 6", teamType: "coed",   p1paid: true, p2paid: true, byeOk: false, byePref: "", registeredAt: "Demo" },
+    { id: 2004, number: 4, name: "Team Delta",   player1: "Player 7", player2: "Player 8", teamType: "male",   p1paid: true, p2paid: true, byeOk: true,  byePref: "", registeredAt: "Demo" },
+    { id: 2005, number: 5, name: "Team Echo",    player1: "Player 9", player2: "Player 10", teamType: "coed",  p1paid: true, p2paid: true, byeOk: false, byePref: "", registeredAt: "Demo" },
+    { id: 2006, number: 6, name: "Team Foxtrot", player1: "Player 11", player2: "Player 12", teamType: "female", p1paid: true, p2paid: true, byeOk: true, byePref: "", registeredAt: "Demo" },
+    { id: 2007, number: 7, name: "Team Golf",    player1: "Player 13", player2: "Player 14", teamType: "male",   p1paid: true, p2paid: true, byeOk: true, byePref: "", registeredAt: "Demo" },
   ];
 
   const [teams, setTeams] = useState(SEVEN_TEAMS);
@@ -1941,8 +1960,8 @@ function App() {
   );
   const [tournamentSettings, setTournamentSettings] = useState({
     registrationOpen: true,
-    venmo: "YardGameXtravaganza",
-    cashapp: "YardGameXtravaganza",
+    venmo: "Lucas-Hanneken",
+    cashapp: "LucasHanneken",
   });
 
   // ── Firebase sync ──────────────────────────────────────────────────────────
