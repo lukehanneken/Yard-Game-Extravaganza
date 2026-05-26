@@ -3,10 +3,50 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <meta name="theme-color" content="#C0392B" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="YGE" />
   <title>Yard Game Extravaganza!</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏆</text></svg>" />
+
+  <!-- Preconnect to CDN domains for faster loading -->
+  <link rel="preconnect" href="https://unpkg.com" crossorigin />
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin />
+  <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+  <!-- Preload critical scripts -->
+  <link rel="preload" href="https://unpkg.com/react@18/umd/react.production.min.js" as="script" crossorigin />
+  <link rel="preload" href="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" as="script" crossorigin />
+
+  <!-- Loading screen styles -->
+  <style>
+    #splash {
+      position: fixed; inset: 0; background: #C0392B;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 9999; transition: opacity 0.4s ease;
+    }
+    #splash.hidden { opacity: 0; pointer-events: none; }
+    .splash-trophy { font-size: 72px; animation: bounce 1s infinite alternate; }
+    @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-16px); } }
+    .splash-title { font-size: 28px; font-weight: 900; color: #E8A020; letter-spacing: 3px; margin-top: 16px; font-family: Arial Black, sans-serif; text-align: center; padding: 0 20px; }
+    .splash-sub { font-size: 14px; color: rgba(255,255,255,0.8); margin-top: 8px; font-family: Arial, sans-serif; }
+    .splash-bar { width: 200px; height: 6px; background: rgba(255,255,255,0.2); border-radius: 99px; margin-top: 24px; overflow: hidden; }
+    .splash-fill { height: 100%; background: #E8A020; border-radius: 99px; animation: fill 2.5s ease forwards; }
+    @keyframes fill { from { width: 0%; } to { width: 100%; } }
+  </style>
 </head>
 <body style="margin:0;padding:0;background:#FFF5DC;">
+
+  <!-- Splash screen shown instantly while JS loads -->
+  <div id="splash">
+    <div class="splash-trophy">🏆</div>
+    <div class="splash-title">YARD GAME EXTRAVAGANZA!</div>
+    <div class="splash-sub">Loading...</div>
+    <div class="splash-bar"><div class="splash-fill"></div></div>
+  </div>
 
   <div id="root"></div>
 
@@ -2024,7 +2064,20 @@ function App() {
     waitForFirebase(() => {
       const root = ReactDOM.createRoot(document.getElementById("root"));
       root.render(<App />);
+      // Hide splash screen once React renders
+      setTimeout(() => {
+        const splash = document.getElementById("splash");
+        if (splash) { splash.classList.add("hidden"); setTimeout(() => splash.remove(), 400); }
+      }, 300);
     });
+  </script>
+  <!-- Service worker for offline caching -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      });
+    }
   </script>
 </body>
 </html>
